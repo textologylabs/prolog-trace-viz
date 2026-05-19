@@ -264,6 +264,81 @@ describe('Instantiated subgoal display', () => {
   });
 });
 
+describe('Builtin goal results', () => {
+  it('extracts the LHS value as the result of an is/2 goal', () => {
+    const events: TraceEvent[] = [
+      { port: 'call', level: 1, goal: '_154 is 16-10', predicate: 'is/2' },
+      { port: 'exit', level: 1, goal: '6 is 16-10', predicate: 'is/2' },
+    ];
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+    expect(timeline[0].result).toBe('6');
+  });
+
+  it('produces no result value for a comparison goal', () => {
+    const events: TraceEvent[] = [
+      { port: 'call', level: 1, goal: '10<16', predicate: '</2' },
+      { port: 'exit', level: 1, goal: '10<16', predicate: '</2' },
+    ];
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+    expect(timeline[0].result).toBe('');
+  });
+
+  it('still extracts the last argument for a compound term', () => {
+    const events: TraceEvent[] = [
+      { port: 'call', level: 1, goal: 'gcd(2,2,_O)', predicate: 'gcd/3' },
+      { port: 'exit', level: 1, goal: 'gcd(2,2,2)', predicate: 'gcd/3' },
+    ];
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+    expect(timeline[0].result).toBe('2');
+  });
+});
+
+describe('Backtracking - REDO discards failed clause attempt', () => {
+  // gcd(10, 6, D): clause #1 (X<Y) fails on 10<6, backtracks to clause #2 (Y<X).
+  const events: TraceEvent[] = [
+    { port: 'call', level: 1, goal: 'gcd(10,6,_O)', predicate: 'gcd/3' },
+    { port: 'call', level: 2, goal: '10<6', predicate: '</2' },
+    { port: 'fail', level: 2, goal: '10<6', predicate: '</2' },
+    {
+      port: 'redo', level: 1, goal: 'gcd(10,6,_O)', predicate: 'gcd/3',
+      clause: { head: 'gcd(X, Y, D)', body: 'Y < X', line: 15 },
+    },
+    { port: 'call', level: 2, goal: '6<10', predicate: '</2' },
+    { port: 'exit', level: 2, goal: '6<10', predicate: '</2' },
+    {
+      port: 'exit', level: 1, goal: 'gcd(10,6,2)', predicate: 'gcd/3',
+      clause: { head: 'gcd(X, Y, D)', body: 'Y < X', line: 15 },
+    },
+  ];
+
+  it('drops the failed clause attempt children', () => {
+    const builder = new TimelineBuilder(events);
+    const nested = builder.build();
+
+    // Only the surviving clause attempt remains.
+    expect(nested).toHaveLength(1);
+    expect(nested[0].children).toHaveLength(1);
+    expect(nested[0].children[0].goal).toBe('6<10');
+  });
+
+  it('does not leak the failed goal into the flattened timeline', () => {
+    const builder = new TimelineBuilder(events);
+    const timeline = flattenTimeline(builder.build());
+
+    expect(timeline.some(s => s.goal === '10<6')).toBe(false);
+    expect(timeline.some(s => s.port === 'fail')).toBe(false);
+  });
+
+  it('uses the clause the goal ultimately succeeded with', () => {
+    const builder = new TimelineBuilder(events);
+    const nested = builder.build();
+
+    expect(nested[0].clause?.line).toBe(15);
+    // Children align to the surviving clause's subgoals.
+    expect(nested[0].children[0].subgoalLabel).toBe('[1.1]');
+  });
+});
+
 describe('Nested timeline structure', () => {
   it('should nest children inside parent steps', () => {
     const events: TraceEvent[] = [

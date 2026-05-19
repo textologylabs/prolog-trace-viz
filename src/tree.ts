@@ -100,7 +100,10 @@ export class TreeBuilder {
           this.processExit(event, timelineStepNumber);
           break;
         case 'redo':
-          // REDO doesn't create new nodes, just marks retry
+          // REDO: the goal is backtracking into a different clause. Discard
+          // the failed clause attempt's subtree so the tree shows only the
+          // derivation that ultimately succeeds.
+          this.discardFailedAttempt(event.level);
           break;
         case 'fail':
           this.processFail(event, timelineStepNumber);
@@ -264,10 +267,44 @@ export class TreeBuilder {
       if (callGoal !== exitGoal) {
         node.finalBinding = this.extractBinding(callGoal, exitGoal);
       }
-      
+
+      // Builtin goals (is/2, comparisons) have no clause. Their CALL goal can
+      // contain unresolved internal vars (e.g. "_3154 is 16-10"); the EXIT
+      // goal has them resolved ("6 is 16-10"), so prefer it for display.
+      if (!event.clause && !node.clauseHead && !node.clauseNumber) {
+        node.goal = exitGoal;
+      }
+
       // Remove from call stack
       this.callStack.delete(event.level);
     }
+  }
+
+  /**
+   * Discard the failed clause attempt for the goal at the given level.
+   * Removes the node's descendants (the work done by the clause that failed)
+   * and clears its clause info so it is re-derived from the next CALL/EXIT.
+   */
+  private discardFailedAttempt(level: number): void {
+    const node = this.callStack.get(level);
+    if (!node) return;
+
+    const removed = new Set<TreeNode>();
+    const collect = (n: TreeNode): void => {
+      for (const child of n.children) {
+        removed.add(child);
+        collect(child);
+      }
+    };
+    collect(node);
+
+    if (removed.size > 0) {
+      this.nodes = this.nodes.filter(n => !removed.has(n));
+    }
+    node.children = [];
+    node.clauseHead = undefined;
+    node.clauseNumber = undefined;
+    node.subgoals = undefined;
   }
 
   /**

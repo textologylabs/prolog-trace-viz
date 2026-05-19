@@ -259,4 +259,95 @@ describe('Timeline Formatter', () => {
       expect(output).toContain('=> X+1+0 = 1+1+1+0');
     });
   });
+
+  describe('internal variable mapping (structural alignment)', () => {
+    /**
+     * Regression test: when a template variable is instantiated to a constant,
+     * the constant is no longer a variable token. A token-counting alignment
+     * then shifts and maps the trailing internal var to the wrong name —
+     * e.g. gcd(X, Y1, D) → gcd(10, Y1, _3302) wrongly became gcd(10, Y1, Y1).
+     */
+    it('maps internal vars by argument position, not variable-token index', () => {
+      const step = createStep({
+        goal: 'gcd(10,16,_3302)',
+        clause: {
+          head: 'gcd(X, Y, D)',
+          body: 'X < Y, Y1 is Y - X, gcd(X, Y1, D)',
+          line: 9,
+        },
+        unifications: [
+          { variable: 'X', value: '10' },
+          { variable: 'Y', value: '16' },
+        ],
+        subgoals: [
+          { label: '[1.3]', goal: 'gcd(X, Y1, D) → gcd(10, Y1, _3302)' },
+        ],
+        result: '2',
+      });
+
+      const output = formatTimeline([step], { debugFlags: new Set() });
+
+      expect(output).toContain('gcd(10, Y1, D)');
+      expect(output).not.toContain('gcd(10, Y1, Y1)');
+      expect(output).not.toContain('_3302');
+    });
+
+    it('maps the output var of a predicate whose earlier args became constants', () => {
+      // t(X1+1, Z) → t(1+0+1, _2008): the internal var must map to Z, not X1.
+      const step = createStep({
+        goal: 't(1+0+1,_2008)',
+        clause: {
+          head: 't(A+1+1, Z)',
+          body: 't(A+1, X1), t(X1+1, Z)',
+          line: 28,
+        },
+        unifications: [],
+        subgoals: [
+          { label: '[1.2]', goal: 't(X1+1, Z) → t(1+0+1, _2008)' },
+        ],
+        result: '1+1+0',
+      });
+
+      const output = formatTimeline([step], { debugFlags: new Set() });
+
+      expect(output).toContain('t(1+0+1, Z)');
+      expect(output).not.toContain('t(1+0+1, X1)');
+      expect(output).not.toContain('_2008');
+    });
+  });
+
+  describe('builtin goal result display', () => {
+    it('shows the LHS variable for an is/2 subgoal result', () => {
+      const step = createStep({
+        stepNumber: 3,
+        goal: '_3154 is 16-10',
+        subgoalLabel: '[1.2]',
+        subgoalTemplate: 'Y1 is Y - X',
+        clause: undefined,
+        unifications: [],
+        result: '6',
+      });
+
+      const output = formatTimeline([step], { debugFlags: new Set() });
+
+      expect(output).toContain('=> Y1 = 6');
+      expect(output).not.toContain('?');
+    });
+
+    it('emits no result line for a comparison goal (empty result)', () => {
+      const step = createStep({
+        stepNumber: 2,
+        goal: '10<16',
+        subgoalLabel: '[1.1]',
+        subgoalTemplate: 'X < Y',
+        clause: undefined,
+        unifications: [],
+        result: '',
+      });
+
+      const output = formatTimeline([step], { debugFlags: new Set() });
+
+      expect(output).not.toContain('=>');
+    });
+  });
 });

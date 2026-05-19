@@ -488,8 +488,15 @@ export function parseEvents(json: string, prologContent?: string): TraceEvent[] 
       continue;
     }
     
-    const { port, level, goal, predicate } = rawEvent;
-    
+    const { level, goal, predicate } = rawEvent;
+
+    // SWI-Prolog emits REDO events as "redo(N)" (N = clause index). Normalize
+    // them to a plain "redo" port so downstream builders see backtracking.
+    const rawPort = rawEvent.port;
+    const port = typeof rawPort === 'string' && rawPort.startsWith('redo')
+      ? 'redo'
+      : rawPort;
+
     if (!port || !['call', 'exit', 'redo', 'fail'].includes(port)) {
       console.warn(`Skipping event at index ${i}: invalid port "${port}"`);
       continue;

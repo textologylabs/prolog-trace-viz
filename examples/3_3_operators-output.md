@@ -32,7 +32,7 @@ t(0+1+1, B)
 │  │  Fact: t(0+1, 1+0) [line 26]
 │  │  => X1 = 1+0
 │  └─
-│  ┌─ Step 3 [Goal 1.2]: t(X1+1, Z) → t(1+0+1, X1)
+│  ┌─ Step 3 [Goal 1.2]: t(X1+1, Z) → t(1+0+1, Z)
 │  │  where X1 = 1+0 (from Step 2)
 │  │  Fact: t(X+0+1, X+1+0) [line 27]
 │  │  Unifications:

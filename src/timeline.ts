@@ -286,28 +286,26 @@ export class TimelineBuilder {
   }
 
   /**
-   * Process REDO event
+   * Process REDO event - the goal at this level is backtracking into a
+   * different clause. The children accumulated so far belong to the clause
+   * attempt that just failed, so discard them: the surviving children must
+   * align with the clause that ultimately succeeds (backfilled at EXIT).
    */
   private processRedo(event: TraceEvent): void {
-    this.stepCounter++;
-    const stepNumber = this.stepCounter;
-    
-    const step: TimelineStep = {
-      stepNumber,
-      port: 'redo',
-      level: event.level,
-      goal: event.goal,
-      unifications: [],
-      subgoals: [],
-      children: [],
-    };
-    
-    const parent = this.activeCallStack[this.activeCallStack.length - 1];
-    if (parent) {
-      parent.children.push(step);
-    } else {
-      this.steps.push(step);
-    }
+    const callStepNumber = this.callStack.get(event.level);
+    if (callStepNumber === undefined) return;
+
+    const step = this.stepMap.get(callStepNumber);
+    if (!step) return;
+
+    // Drop the failed clause attempt's subgoal steps.
+    step.children = [];
+
+    // A redo invalidates any clause/unification info from the failed attempt
+    // so it can be re-derived cleanly from the next CALL/EXIT.
+    step.clause = undefined;
+    step.unifications = [];
+    step.subgoals = [];
   }
 
   /**
@@ -518,14 +516,28 @@ export class TimelineBuilder {
   }
 
   /**
-   * Extract the result value from an EXIT goal
+   * Extract the result value from an EXIT goal.
+   *
+   * - Compound term `f(a, b, R)` -> the last argument is the result.
+   * - `is/2` goal `6 is 16-10` -> the value bound to the LHS ("6").
+   * - Comparison goals (`<`, `>=`, ...) bind nothing -> empty string, which
+   *   suppresses the `=>` result line in the formatter.
    */
   private extractResult(exitGoal: string): string {
     const match = exitGoal.match(/^([^(]+)\((.*)\)$/);
-    if (!match) return exitGoal;
-    
-    const args = this.splitArguments(match[2]);
-    return args[args.length - 1] || exitGoal;
+    if (match) {
+      const args = this.splitArguments(match[2]);
+      return args[args.length - 1] || exitGoal;
+    }
+
+    const isMatch = exitGoal.match(/^(.+?)\s+is\s+(.+)$/);
+    if (isMatch) return isMatch[1].trim();
+
+    if (/(=<|>=|=:=|=\\=|<|>|==|\\==)/.test(exitGoal)) {
+      return '';
+    }
+
+    return exitGoal;
   }
 
   /**

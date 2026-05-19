@@ -187,9 +187,17 @@ function formatResultDisplay(step: TimelineStep, showInternalVars: boolean): str
   
   // Get the display variable name - prefer subgoalTemplate over clause head
   let displayVar: string | null = null;
-  
-  // First try subgoalTemplate (caller's variable name)
+
+  // `is/2` goal: the result binds the LHS variable, e.g. template "Y1 is Y - X".
   if (step.subgoalTemplate) {
+    const isMatch = step.subgoalTemplate.match(/^(.+?)\s+is\s+/);
+    if (isMatch) {
+      displayVar = isMatch[1].trim();
+    }
+  }
+
+  // First try subgoalTemplate (caller's variable name)
+  if (!displayVar && step.subgoalTemplate) {
     const templateMatch = step.subgoalTemplate.match(/^[^(]+\((.+)\)$/);
     if (templateMatch) {
       const templateArgs = splitArgs(templateMatch[1]);
@@ -300,47 +308,111 @@ function formatMergedContent(step: TimelineStep, indent: string, showInternal: b
 
 /**
  * Replace internal variable names (_NNN) in a string with corresponding names
- * from a template string, by building a positional mapping between the two.
- * Works for both predicate(args) and operator expressions (e.g., X is Y+1).
+ * from a template string.
+ *
+ * The mapping is built by aligning the two terms *structurally* (functor by
+ * functor, argument by argument) rather than by counting variable tokens
+ * positionally. Positional counting breaks whenever a template variable was
+ * instantiated to a constant: e.g. template `gcd(X, Y1, D)` vs instantiated
+ * `gcd(10, Y1, _3302)` — `X` became `10` (no longer a variable token), so a
+ * token-counting walk would map `_3302` to `Y1` instead of `D`.
+ *
+ * Works for predicate(args), `is/2` expressions, and arithmetic operators.
  */
 function replaceInternalVarsFromTemplate(template: string, instantiated: string, additive: boolean = false): string {
-  // Tokenise both strings: extract variable-shaped tokens in order
-  const templateTokens = [...template.matchAll(/\b([A-Z_][A-Za-z0-9_]*)\b/g)];
-  const instantiatedTokens = [...instantiated.matchAll(/\b(_\d+)\b/g)];
+  if (!/_\d+/.test(instantiated)) return instantiated;
 
-  if (instantiatedTokens.length === 0) return instantiated;
+  const map = new Map<string, string>();
+  buildInternalVarMap(template, instantiated, map);
 
-  // Build mapping: for each internal var in instantiated, find the template
-  // variable at the same positional slot
-  const replacements = new Map<string, string>();
-  const templateVarPositions: Array<{ name: string }> = [];
-
-  for (const m of templateTokens) {
-    if (m[1] !== '_') {
-      templateVarPositions.push({ name: m[1] });
-    }
-  }
-
-  // Walk through instantiated tokens and match positionally
-  let instVarIndex = 0;
-  const allInstTokens = [...instantiated.matchAll(/\b([A-Z_][A-Za-z0-9_]*)\b/g)];
-  for (const m of allInstTokens) {
-    if (isInternalVariable(m[1]) && instVarIndex < templateVarPositions.length) {
-      const displayVar = templateVarPositions[instVarIndex].name;
-      replacements.set(m[1], additive ? `${displayVar}(${m[1]})` : displayVar);
-    }
-    if (m[1] !== '_') {
-      instVarIndex++;
-    }
-  }
-
-  // Apply replacements
   let result = instantiated;
-  for (const [internalVar, replacement] of replacements) {
+  for (const [internalVar, displayVar] of map) {
+    const replacement = additive ? `${displayVar}(${internalVar})` : displayVar;
     result = result.replace(new RegExp(`\\b${internalVar}\\b`, 'g'), replacement);
   }
 
   return result;
+}
+
+/**
+ * Recursively align a template term with its instantiated form, recording a
+ * mapping from each internal variable (_NNN) found in the instantiated term to
+ * the meaningful name at the structurally-corresponding position in template.
+ */
+function buildInternalVarMap(template: string, instantiated: string, map: Map<string, string>): void {
+  template = template.trim();
+  instantiated = instantiated.trim();
+
+  // Leaf: an internal variable maps to whatever the template has here.
+  if (isInternalVariable(instantiated)) {
+    if (template && !isInternalVariable(template)) {
+      map.set(instantiated, template);
+    }
+    return;
+  }
+
+  // predicate(args) decomposition
+  const tPred = parsePredicateTerm(template);
+  const iPred = parsePredicateTerm(instantiated);
+  if (tPred && iPred && tPred.functor === iPred.functor && tPred.args.length === iPred.args.length) {
+    for (let i = 0; i < tPred.args.length; i++) {
+      buildInternalVarMap(tPred.args[i], iPred.args[i], map);
+    }
+    return;
+  }
+
+  // `is/2` decomposition (X is Expr)
+  const tIs = splitTopLevelIs(template);
+  const iIs = splitTopLevelIs(instantiated);
+  if (tIs && iIs) {
+    buildInternalVarMap(tIs.lhs, iIs.lhs, map);
+    buildInternalVarMap(tIs.rhs, iIs.rhs, map);
+    return;
+  }
+
+  // arithmetic operator decomposition
+  const tOp = findBinaryOperator(template);
+  const iOp = findBinaryOperator(instantiated);
+  if (tOp && iOp && tOp.op === iOp.op) {
+    buildInternalVarMap(tOp.left, iOp.left, map);
+    buildInternalVarMap(tOp.right, iOp.right, map);
+  }
+}
+
+/** Parse a `functor(args...)` term. Returns null if not a compound term. */
+function parsePredicateTerm(term: string): { functor: string; args: string[] } | null {
+  const match = term.match(/^([A-Za-z_][A-Za-z0-9_]*)\((.+)\)$/);
+  if (!match) return null;
+  return { functor: match[1], args: splitArgs(match[2]) };
+}
+
+/** Split a term on a top-level (depth-0) ` is ` operator. */
+function splitTopLevelIs(term: string): { lhs: string; rhs: string } | null {
+  let depth = 0;
+  for (let i = 0; i < term.length - 3; i++) {
+    const ch = term[i];
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth--;
+    else if (depth === 0 && term.startsWith(' is ', i)) {
+      return { lhs: term.slice(0, i).trim(), rhs: term.slice(i + 4).trim() };
+    }
+  }
+  return null;
+}
+
+/** Find a top-level binary arithmetic operator (rightmost wins, like findOperator). */
+function findBinaryOperator(term: string): { op: string; left: string; right: string } | null {
+  const operators = ['+', '-', '*', '/'];
+  let depth = 0;
+  for (let i = term.length - 1; i >= 0; i--) {
+    const ch = term[i];
+    if (ch === ')' || ch === ']') depth++;
+    else if (ch === '(' || ch === '[') depth--;
+    else if (depth === 0 && operators.includes(ch) && i > 0) {
+      return { op: ch, left: term.slice(0, i).trim(), right: term.slice(i + 1).trim() };
+    }
+  }
+  return null;
 }
 
 /**

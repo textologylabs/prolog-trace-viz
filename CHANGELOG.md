@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Backtracking misattribution**: `REDO` events were dropped during parsing, so a goal that failed one clause and backtracked to another kept the failed attempt's subgoal steps. Those steps were then mislabeled against the surviving clause's subgoals (e.g. a failed `10 < 6` comparison rendered under the wrong goal, and recursive calls split into phantom sibling steps). `REDO` events are now processed and the failed clause attempt is discarded from both the execution timeline and the call tree.
+- **Internal variable mislabeling**: When a clause argument was instantiated to a constant, positional variable-name alignment shifted and mapped the wrong name onto trailing internal variables — e.g. `gcd(X, Y1, D)` rendered as `gcd(10, Y1, Y1)` instead of `gcd(10, Y1, D)`. Variable mapping is now structural (functor / argument / operator alignment).
+- **Builtin goal results**: `is/2` steps now show the bound left-hand-side variable (e.g. `Y1 = 6`) instead of `? = 6 is 16-10`; comparison goals (`<`, `>=`, …) no longer emit a meaningless result line.
+- **Call tree builtin goals**: `is/2` nodes display the resolved goal (e.g. `6 is 16-10`) instead of an unresolved internal variable (`_3154 is 16-10`).
+
 ## [2.6.2] - 2026-04-05
 
 ### Fixed
