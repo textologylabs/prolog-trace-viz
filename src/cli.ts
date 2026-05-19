@@ -51,6 +51,9 @@ OPTIONS:
   -v, --version           Show version number
   --copyright             Show copyright and build information
 
+ptv checks for a newer version automatically (at most once per day) and
+offers to update; pass --quiet to suppress that check.
+
 DEBUG FLAGS:
   internal-vars           Show Prolog's internal variable names alongside
                           clause variable names (e.g., "Z (_2008) = value")

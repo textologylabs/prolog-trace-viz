@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Automatic update check**: After a normal run, ptv checks the npm registry for a newer release (throttled to at most once per day, with a cached result in between) and, if one exists, nudges the user with a `Y/n` prompt to install it globally. Installation progress is shown with an animated terminal spinner. The check is silent and non-fatal on any error, is skipped when not running interactively (non-TTY), and can be disabled with `--quiet`.
+
 ## [2.6.3] - 2026-05-19
 
 ### Fixed

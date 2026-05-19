@@ -58,6 +58,9 @@ prolog-trace-viz <prolog-file> <query> [options]
 | `-h, --help` | Show help message |
 | `-v, --version` | Show version number |
 
+ptv automatically checks npm for a newer release (at most once per day) and
+offers to install it. Use `--quiet` to skip that check.
+
 ### Debug Flags
 
 | Flag | Description |

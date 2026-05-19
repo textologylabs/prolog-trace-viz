@@ -76,7 +76,7 @@ async function main(): Promise<void> {
     console.log(getCopyright());
     process.exit(0);
   }
-  
+
   if (result.type === 'error') {
     logError(formatError(result.error!));
     process.exit(1);
@@ -90,6 +90,10 @@ async function main(): Promise<void> {
     logError(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
+
+  // After the command succeeds, run the automatic (throttled) update check.
+  const { notifyAndMaybeUpdate } = await import('./update-notifier.js');
+  await notifyAndMaybeUpdate({ quiet: options.quiet });
 }
 
 async function run(options: CLIOptions): Promise<void> {
