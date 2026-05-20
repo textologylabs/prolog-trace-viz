@@ -94,6 +94,6 @@ export async function installUpdate(latest: string): Promise<number> {
     return 1;
   }
 
-  spinner.succeed(`Updated ptv to v${latest}. Run it again to use the new version.`);
+  spinner.succeed(`Updated ptv to v${latest}.`);
   return 0;
 }

@@ -83,17 +83,20 @@ async function main(): Promise<void> {
   }
   
   const options = result.options!;
-  
+
+  // Nudge for updates *before* the command. If the user accepts, the notifier
+  // installs the new version and re-execs ptv with the same arguments, so
+  // the user's command runs transparently on the freshly installed binary.
+  // Throttled (once/day) and silent on non-TTY, so the delay is typically zero.
+  const { notifyAndMaybeUpdate } = await import('./update-notifier.js');
+  await notifyAndMaybeUpdate({ quiet: options.quiet });
+
   try {
     await run(options);
   } catch (err) {
     logError(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
-
-  // After the command succeeds, run the automatic (throttled) update check.
-  const { notifyAndMaybeUpdate } = await import('./update-notifier.js');
-  await notifyAndMaybeUpdate({ quiet: options.quiet });
 }
 
 async function run(options: CLIOptions): Promise<void> {

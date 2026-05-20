@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Update check runs before the command, not after**: The automatic update nudge now runs *before* ptv starts the trace, so the user can update first rather than waiting on a stale-version run.
+- **Seamless re-run after update**: If the user accepts the update, ptv installs the new version and then re-execs itself with the same arguments (stdio inherited), so the original command runs transparently on the freshly installed binary. A guard env var prevents the re-run from triggering another check.
+- **Throttle temporarily disabled**: The once-per-day cache is commented out in this release so every run exercises the npm registry check. It will be re-enabled in a follow-up.
+
 ## [2.6.4] - 2026-05-19
 
 ### Added
