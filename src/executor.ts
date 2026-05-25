@@ -86,13 +86,17 @@ export async function checkDependencies(): Promise<DependencyStatus> {
 /**
  * Executes the custom tracer with the given wrapper file and captures the JSON output.
  */
-export async function executeTracer(wrapperPath: string): Promise<ExecutionResult> {
+export async function executeTracer(
+  wrapperPath: string,
+  opts: { cwd?: string; jsonPath?: string } = {}
+): Promise<ExecutionResult> {
   const wrapperDir = path.dirname(wrapperPath);
-  const jsonPath = path.join(wrapperDir, 'trace.json');
-  
+  const jsonPath = opts.jsonPath || path.join(wrapperDir, 'trace.json');
+  const cwd = opts.cwd || wrapperDir;
+
   return new Promise((resolve, reject) => {
     const proc = spawn('swipl', [wrapperPath], {
-      cwd: wrapperDir,
+      cwd,
     });
     
     let stderr = '';

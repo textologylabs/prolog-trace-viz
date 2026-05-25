@@ -149,7 +149,7 @@ describe('Wrapper Generator - Property Tests', () => {
 
           expect(parsed).not.toBeNull();
           expect(parsed!.prologContent).toBe(prologContent.trim());
-          expect(parsed!.query).toBe(query.trim());
+          expect(parsed!.query).toBe(query.trim().replace(/\.\s*$/, ''));
           expect(parsed!.tracerPath).toBe(tracerPath);
         }
       ),

@@ -7,6 +7,8 @@ export interface WrapperConfig {
   query: string;
   depth?: number;
   tracerPath: string;
+  /** Absolute path for the trace.json output. Defaults to 'trace.json' (cwd-relative). */
+  tracePath?: string;
 }
 
 export interface TempFile {
@@ -24,8 +26,12 @@ export interface TempFile {
  * - Tracer cleanup
  */
 export function generateWrapper(config: WrapperConfig): string {
-  const { prologContent, query, depth, tracerPath } = config;
+  const { prologContent, query, depth, tracerPath, tracePath } = config;
   const maxDepth = depth || 100; // Default to 100 if not specified
+  // Strip trailing '.' from the query - it's a clause terminator that breaks
+  // when the query is inlined as a sub-goal of run_trace.
+  const cleanQuery = query.trim().replace(/\.\s*$/, '');
+  const traceOutPath = (tracePath || 'trace.json').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   
   const lines: string[] = [
     `% Load custom tracer`,
@@ -44,9 +50,9 @@ export function generateWrapper(config: WrapperConfig): string {
   lines.push('run_trace :-');
   lines.push(`    install_tracer(${maxDepth}),`);
   lines.push('    catch(');
-  lines.push(`        (${query.trim()}, export_trace_json('trace.json')),`);
+  lines.push(`        (${cleanQuery}, export_trace_json('${traceOutPath}')),`);
   lines.push('        Error,');
-  lines.push(`        (format('Error: ~w~n', [Error]), export_trace_json('trace.json'))`);
+  lines.push(`        (format('Error: ~w~n', [Error]), export_trace_json('${traceOutPath}'))`);
   lines.push('    ),');
   lines.push('    remove_tracer.');
   lines.push('');
@@ -88,9 +94,11 @@ export function mapWrapperLineToSource(wrapperLine: number, prologContent: strin
   // The wrapper includes all source lines as-is, so no need to skip empty lines or comments
   return wrapperLine - offset;
 }
-export async function createTempWrapper(config: WrapperConfig): Promise<TempFile> {
+export async function createTempWrapper(
+  config: WrapperConfig & { tempDir?: string }
+): Promise<TempFile> {
   const content = generateWrapper(config);
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'prolog-trace-viz-'));
+  const tempDir = config.tempDir ?? await fs.mkdtemp(path.join(os.tmpdir(), 'prolog-trace-viz-'));
   const wrapperPath = path.join(tempDir, 'wrapper.pl');
   
   await fs.writeFile(wrapperPath, content, 'utf-8');

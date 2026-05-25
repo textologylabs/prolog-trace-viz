@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Trailing `.` in query crashed the tracer**: A query like `"appendo([1,2], [3,4], X)."` was inlined verbatim into the generated wrapper as `(appendo(…)., export_trace_json(…))`, where the period inside the parens produced a `Syntax error: Operand expected, unquoted comma or bar found` and `run_trace/0` never got defined. The wrapper generator now strips a single trailing `.` from the query before inlining it.
+- **Relative `consult/1` paths broke**: `swipl` was being spawned with `cwd` set to the wrapper's temp dir, so any `:- consult('../foo').` in the user's file resolved against `/var/folders/…` instead of the source file's directory. `ptv` now runs `swipl` with `cwd` set to the source file's directory; the trace JSON output is written via an absolute path so it still lands in the temp dir regardless of cwd.
+
 ## [2.6.5] - 2026-05-20
 
 ### Changed

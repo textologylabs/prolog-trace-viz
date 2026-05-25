@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import { parseArgs, getHelpText, getVersion, getCopyright, CLIOptions } from './cli.js';
 import { formatError } from './errors.js';
 import { createTempWrapper } from './wrapper.js';
@@ -130,7 +131,18 @@ async function run(options: CLIOptions): Promise<void> {
   
   // Get absolute path to tracer.pl from package installation
   const tracerPath = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'tracer.pl');
-  
+
+  // Resolve the source file's directory so relative consult() paths in the
+  // user's code work the same as if they ran swipl directly on the file.
+  const sourceAbsPath = path.resolve(options.prologFile);
+  const sourceDir = path.dirname(sourceAbsPath);
+
+  // Pre-create the temp dir so we can compute an absolute trace.json path
+  // and bake it into the wrapper. cwd will be the source dir (so relative
+  // consult() paths resolve), so trace.json needs an absolute path.
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'prolog-trace-viz-'));
+  const absTraceJson = path.join(tempDir, 'trace.json');
+
   // Create wrapper (no instrumentation needed)
   logVerbose('Creating tracer wrapper...', options);
   const tempFile = await createTempWrapper({
@@ -138,12 +150,17 @@ async function run(options: CLIOptions): Promise<void> {
     query: options.query,
     depth: options.depth,
     tracerPath,
+    tracePath: absTraceJson,
+    tempDir,
   });
-  
+
   try {
     // Execute custom tracer
     logVerbose('Executing custom tracer...', options);
-    const execResult = await executeTracer(tempFile.path);
+    const execResult = await executeTracer(tempFile.path, {
+      cwd: sourceDir,
+      jsonPath: absTraceJson,
+    });
     
     logVerbose(`Tracer exit code: ${execResult.exitCode}`, options);
     logVerbose(`JSON length: ${execResult.json?.length || 0}`, options);
