@@ -15,7 +15,7 @@ factorial(3, X)
 
 ## Execution Timeline
 
-┌─ Step 1: factorial(3, R)
+┌─ Step 1: factorial(3, X)
 │  Clause: factorial(N, R) [line 5]
 │  Unifications:
 │    N = 3
@@ -80,8 +80,7 @@ factorial(3, X)
 │  │  where R1 = 2 (from Step 4)
 │  │  => R = 6
 │  └─
-│  => R = 6
-│  Query Variable: X = 6
+│  => X = 6
 └─
 
 

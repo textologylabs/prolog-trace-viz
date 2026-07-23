@@ -16,12 +16,11 @@ t(1+0+1, C)
 
 ## Execution Timeline
 
-┌─ Step 1: t(1+0+1, X+1+0)
+┌─ Step 1: t(1+0+1, C)
 │  Fact: t(X+0+1, X+1+0) [line 2]
 │  Unifications:
 │    X = 1
-│  => X+1+0 = 1+1+0
-│  Query Variable: C = 1+1+0
+│  => C = 1+1+0
 └─
 
 

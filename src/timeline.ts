@@ -7,6 +7,7 @@
 
 import { SourceClauseMap } from './clauses.js';
 import { VariableBindingTracker } from './variable-tracker.js';
+import { splitConjuncts, matchGoalToConjunct, parseTerm, isVariable } from './query.js';
 
 export interface TimelineStep {
   stepNumber: number;
@@ -31,7 +32,12 @@ export interface TimelineStep {
   subgoalInstantiated?: string; // Instantiated form from parent (e.g., "t(1+0+1, _2008)") - preserves parent's internal vars
   subgoalBindings?: Array<{ variable: string; value: string; fromStep: number }>; // Bindings applied to reach this goal
   result?: string;          // For merged steps: the result value
+  exitGoal?: string;        // For merged steps: the goal as it stood at EXIT
+  resultBindings?: Array<{ variable: string; value: string }>; // What this step actually bound
   queryVarState?: string;   // State of the query variable at this step
+  isRetry?: boolean;        // REDO: this step re-enters a goal that already succeeded
+  retryOfStep?: number;     // For retry steps: the step number of the solution being re-entered
+  retryRejected?: Array<{ variable: string; value: string }>; // The bindings backtracking undid
   children: TimelineStep[]; // Nested child steps
 }
 
@@ -79,6 +85,18 @@ export class TimelineBuilder {
   private callStack: Map<number, number> = new Map(); // level -> step number
   private stepMap: Map<number, TimelineStep> = new Map(); // step number -> step object
   private activeCallStack: TimelineStep[] = []; // Stack of currently active (unresolved) calls
+  // level -> steps that EXITed at that level and are still backtrackable
+  // (a goal that succeeded leaves a choice point Prolog can REDO into).
+  private exitedByLevel: Map<number, TimelineStep[]> = new Map();
+  // retry step -> the earlier step whose choice point it re-enters
+  private retryOrigin: Map<TimelineStep, TimelineStep> = new Map();
+  // Top-level goals of the query, in the user's own variable names
+  private queryConjuncts: string[] = [];
+  // step -> the step it is nested in (undefined for top-level goals)
+  private parentOf: Map<TimelineStep, TimelineStep | undefined> = new Map();
+  // step -> which of its parent's subgoals it is solving. Retry steps re-solve
+  // an earlier subgoal, so a step's position is not simply its child index.
+  private subgoalSlots: Map<TimelineStep, number> = new Map();
 
   constructor(
     private events: TraceEvent[],
@@ -109,8 +127,9 @@ export class TimelineBuilder {
     let bindingTracker: VariableBindingTracker | undefined;
     if (this.originalQuery) {
       bindingTracker = new VariableBindingTracker(this.originalQuery);
+      this.queryConjuncts = splitConjuncts(this.originalQuery);
     }
-    
+
     // Process all events to build nested tree
     for (const event of this.events) {
       if (this.isTracerPredicate(event.predicate)) continue;
@@ -214,14 +233,21 @@ export class TimelineBuilder {
     // Store in map for later reference
     this.stepMap.set(stepNumber, step);
     this.callStack.set(event.level, stepNumber);
-    
+    this.parentOf.set(step, parent);
+
     // Add to parent's children or to root steps
     if (parent) {
       parent.children.push(step);
     } else {
+      // A top-level goal: name its arguments after the query the user typed,
+      // the same way a subgoal is named after its parent clause's body.
       this.steps.push(step);
+      const conjunct = matchGoalToConjunct(event.goal, this.queryConjuncts);
+      if (conjunct) {
+        step.subgoalTemplate = conjunct;
+      }
     }
-    
+
     // Push to active stack
     this.activeCallStack.push(step);
   }
@@ -270,6 +296,7 @@ export class TimelineBuilder {
     
     // Merge: convert to 'merged' and add result
     step.port = 'merged';
+    step.exitGoal = event.goal;
     step.result = this.extractResult(event.goal);
     
     // Get query variable state
@@ -280,32 +307,152 @@ export class TimelineBuilder {
       }
     }
     
+    // The goal succeeded but may still have untried alternatives, so record it
+    // as a choice point a later REDO at this level can re-enter.
+    const exited = this.exitedByLevel.get(event.level);
+    if (exited) {
+      exited.push(step);
+    } else {
+      this.exitedByLevel.set(event.level, [step]);
+    }
+
     // Pop from active stack
     this.activeCallStack.pop();
     this.callStack.delete(event.level);
   }
 
   /**
-   * Process REDO event - the goal at this level is backtracking into a
-   * different clause. The children accumulated so far belong to the clause
-   * attempt that just failed, so discard them: the surviving children must
-   * align with the clause that ultimately succeeds (backfilled at EXIT).
+   * Process REDO event. Two distinct situations share this port:
+   *
+   * 1. The goal at this level is still running (its body failed), so Prolog is
+   *    retrying it with a different clause. The children accumulated so far
+   *    belong to the clause attempt that just failed, so discard them: the
+   *    surviving children must align with the clause that ultimately succeeds
+   *    (backfilled at EXIT).
+   *
+   * 2. The goal at this level already succeeded and Prolog is backtracking into
+   *    it for another solution — the usual case for a conjunction, whose goals
+   *    all share one trace level. That retry is a real execution step, so emit
+   *    it: the EXIT that follows is the *next* solution of the same goal and
+   *    must not be attributed to whatever else ran at this level meanwhile.
    */
   private processRedo(event: TraceEvent): void {
     const callStepNumber = this.callStack.get(event.level);
-    if (callStepNumber === undefined) return;
 
-    const step = this.stepMap.get(callStepNumber);
-    if (!step) return;
+    if (callStepNumber !== undefined) {
+      const step = this.stepMap.get(callStepNumber);
+      if (!step) return;
 
-    // Drop the failed clause attempt's subgoal steps.
-    step.children = [];
+      // Case 1: drop the failed clause attempt's subgoal steps.
+      step.children = [];
 
-    // A redo invalidates any clause/unification info from the failed attempt
-    // so it can be re-derived cleanly from the next CALL/EXIT.
-    step.clause = undefined;
-    step.unifications = [];
-    step.subgoals = [];
+      // A redo invalidates any clause/unification info from the failed attempt
+      // so it can be re-derived cleanly from the next CALL/EXIT.
+      step.clause = undefined;
+      step.unifications = [];
+      step.subgoals = [];
+      return;
+    }
+
+    // Case 2: re-enter the choice point left by an earlier solution.
+    const origin = this.takeExitedStep(event.level, event.goal);
+    if (!origin) return;
+
+    // Enclosing goals that had already succeeded will succeed again once this
+    // retry does - Prolog re-EXITs the whole chain. Re-enter them too, outermost
+    // first, so those later EXITs land on the goals they belong to and the
+    // nesting mirrors the call stack.
+    const ancestors: TimelineStep[] = [];
+    for (let a = this.parentOf.get(origin); a; a = this.parentOf.get(a)) {
+      if (this.callStack.get(a.level) === a.stepNumber) break; // still running
+      if (a.port !== 'merged') break;                          // never succeeded
+      ancestors.push(a);
+    }
+
+    for (const ancestor of ancestors.reverse()) {
+      this.dropExitedStep(ancestor);
+      this.pushRetryStep(ancestor, ancestor.goal);
+    }
+
+    this.pushRetryStep(origin, event.goal);
+  }
+
+  /**
+   * Open a step that re-enters `origin`, and make it the active frame for its
+   * level so the EXIT that follows records the new solution against it.
+   */
+  private pushRetryStep(origin: TimelineStep, goal: string): TimelineStep {
+    this.stepCounter++;
+    const step: TimelineStep = {
+      stepNumber: this.stepCounter,
+      port: 'redo',
+      level: origin.level,
+      goal,
+      unifications: [],
+      subgoals: [],
+      isRetry: true,
+      children: [],
+    };
+
+    this.retryOrigin.set(step, origin);
+    this.stepMap.set(step.stepNumber, step);
+    this.callStack.set(origin.level, step.stepNumber);
+
+    // Sits alongside the step it retries: same parent, later in the timeline.
+    const parent = this.activeCallStack[this.activeCallStack.length - 1];
+    this.parentOf.set(step, parent);
+    if (parent) {
+      parent.children.push(step);
+    } else {
+      this.steps.push(step);
+    }
+
+    this.activeCallStack.push(step);
+
+    return step;
+  }
+
+  /**
+   * Forget a choice point that is being re-entered, so it cannot be picked twice.
+   */
+  private dropExitedStep(step: TimelineStep): void {
+    const exited = this.exitedByLevel.get(step.level);
+    if (!exited) return;
+
+    const index = exited.indexOf(step);
+    if (index !== -1) exited.splice(index, 1);
+  }
+
+  /**
+   * Find and consume the choice point a REDO at this level is re-entering.
+   *
+   * Sibling goals of a conjunction share a trace level, so the most recent EXIT
+   * at that level is not necessarily the goal being redone. Prefer the newest
+   * exited step whose goal matches (internal variable names differ between the
+   * CALL and the REDO because backtracking undoes the bindings), and fall back
+   * to the most recent one.
+   *
+   * Entries are never expired: Prolog only emits a REDO for a choice point that
+   * is still live, and a newer entry always wins the search, so a superseded one
+   * can only ever be picked when it is the genuine target.
+   */
+  private takeExitedStep(level: number, goal: string): TimelineStep | undefined {
+    const exited = this.exitedByLevel.get(level);
+    if (!exited || exited.length === 0) return undefined;
+
+    const normalize = (g: string): string => g.replace(/_\d+/g, '_');
+    const target = normalize(goal);
+
+    let index = -1;
+    for (let i = exited.length - 1; i >= 0; i--) {
+      if (normalize(exited[i].goal) === target) {
+        index = i;
+        break;
+      }
+    }
+    if (index === -1) index = exited.length - 1;
+
+    return exited.splice(index, 1)[0];
   }
 
   /**
@@ -331,7 +478,7 @@ export class TimelineBuilder {
     } else {
       this.steps.push(step);
     }
-    
+
     this.activeCallStack.pop();
     this.callStack.delete(event.level);
   }
@@ -347,12 +494,30 @@ export class TimelineBuilder {
     const renumber = (steps: TimelineStep[], parent?: TimelineStep): void => {
       // Track results from previous siblings for binding context
       const siblingResults: Map<string, { value: string; stepNumber: number }> = new Map();
-      
+      let nextSlot = 0;
+
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
         counter++;
         step.stepNumber = counter;
-        
+
+        // Resolve which subgoal slot this step occupies
+        const origin = this.retryOrigin.get(step);
+        let slot: number | undefined;
+        if (origin) {
+          // The origin is an earlier sibling, so it is already renumbered.
+          step.retryOfStep = origin.stepNumber;
+          slot = this.subgoalSlots.get(origin);
+          if (slot !== undefined) {
+            nextSlot = slot + 1;
+          }
+        } else {
+          slot = nextSlot++;
+        }
+        if (slot !== undefined) {
+          this.subgoalSlots.set(step, slot);
+        }
+
         // Update subgoal labels to use new step number
         if (step.subgoals.length > 0) {
           step.subgoals = step.subgoals.map((subgoal, index) => ({
@@ -362,11 +527,11 @@ export class TimelineBuilder {
         }
         
         // Assign subgoalLabel and template based on parent's subgoals (now that clause info is backfilled)
-        if (parent && parent.subgoals.length > 0 && i < parent.subgoals.length) {
-          step.subgoalLabel = parent.subgoals[i].label;
-          
+        if (parent && parent.subgoals.length > 0 && slot !== undefined && slot < parent.subgoals.length) {
+          step.subgoalLabel = parent.subgoals[slot].label;
+
           // Extract template from parent's subgoal (format: "template → instantiated" or just "template")
-          const subgoalGoal = parent.subgoals[i].goal;
+          const subgoalGoal = parent.subgoals[slot].goal;
           const arrowIndex = subgoalGoal.indexOf(' → ');
           if (arrowIndex !== -1) {
             step.subgoalTemplate = subgoalGoal.slice(0, arrowIndex);
@@ -375,14 +540,37 @@ export class TimelineBuilder {
             step.subgoalTemplate = subgoalGoal;
           }
           
-          // Compute bindings applied to reach this goal from template
+          // Compute bindings applied to reach this goal from template.
+          // Not for a retry: backtracking undoes the bindings the earlier
+          // solution made, so the goal is re-entered uninstantiated.
+          if (!origin) {
+            step.subgoalBindings = this.computeSubgoalBindings(
+              step.subgoalTemplate,
+              step.goal,
+              siblingResults
+            );
+          }
+        } else if (origin) {
+          // Retry of a step whose slot is unknown - it solves the same subgoal.
+          step.subgoalLabel = origin.subgoalLabel;
+          step.subgoalTemplate = origin.subgoalTemplate;
+          step.subgoalInstantiated = origin.subgoalInstantiated;
+        } else if (!parent && step.subgoalTemplate) {
+          // Top-level goal: show what earlier conjuncts bound in it.
           step.subgoalBindings = this.computeSubgoalBindings(
             step.subgoalTemplate,
             step.goal,
             siblingResults
           );
         }
-        
+
+        // What this step bound, in the caller's variable names. The origin of a
+        // retry is an earlier sibling, so its bindings are already computed.
+        this.assignResultBindings(step);
+        if (origin) {
+          step.retryRejected = origin.resultBindings;
+        }
+
         // Track this step's result for subsequent siblings
         if (step.result && step.subgoalTemplate) {
           // Extract variable names from template that might be used by later subgoals
@@ -400,6 +588,58 @@ export class TimelineBuilder {
     };
     
     renumber(this.steps);
+  }
+
+  /**
+   * Work out what a step actually bound, by comparing the goal as it was CALLed
+   * with the goal as it stood at EXIT: every argument the caller left open and
+   * execution filled in.
+   *
+   * This replaces the old "the result is the last argument" assumption, which
+   * misreads any predicate whose output is not last - `member(X, [a,b,c])`
+   * reported `[a,b,c] = [a,b,c]` rather than `X = a`.
+   *
+   * Names come from the caller's vocabulary: the subgoal template (or, for a
+   * top-level goal, the query conjunct), falling back to the matched clause
+   * head. A position with no meaningful name is left out rather than shown
+   * under an internal name like `_788`.
+   */
+  private assignResultBindings(step: TimelineStep): void {
+    if (!step.exitGoal) return;
+
+    const called = parseTerm(step.goal);
+    const exited = parseTerm(step.exitGoal);
+    if (!called || !exited) return;
+    if (called.functor !== exited.functor) return;
+    if (called.args.length !== exited.args.length) return;
+
+    const templateArgs = step.subgoalTemplate ? parseTerm(step.subgoalTemplate)?.args : undefined;
+    const headArgs = step.clause ? parseTerm(step.clause.head)?.args : undefined;
+
+    const nameFor = (index: number): string | undefined => {
+      for (const args of [templateArgs, headArgs]) {
+        const candidate = args?.[index]?.trim();
+        if (candidate && isVariable(candidate) && !candidate.startsWith('_')) {
+          return candidate;
+        }
+      }
+      return undefined;
+    };
+
+    const bindings: Array<{ variable: string; value: string }> = [];
+    for (let i = 0; i < called.args.length; i++) {
+      const before = called.args[i].trim();
+      const after = exited.args[i].trim();
+      if (before === after) continue;
+      if (!isVariable(before)) continue;
+
+      const variable = nameFor(i);
+      if (variable) {
+        bindings.push({ variable, value: after });
+      }
+    }
+
+    step.resultBindings = bindings;
   }
 
   /**

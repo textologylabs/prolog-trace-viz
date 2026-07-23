@@ -350,4 +350,83 @@ describe('Timeline Formatter', () => {
       expect(output).not.toContain('=>');
     });
   });
+
+  describe('retry (REDO) steps', () => {
+    it('labels a merged retry as REDO and says what backtracking undid', () => {
+      const step = createStep({
+        stepNumber: 4,
+        goal: 'likes(mary,_788)',
+        subgoalTemplate: 'likes(mary, X)',
+        clause: { head: 'likes(mary, wine)', body: 'true', line: 13 },
+        unifications: [],
+        result: 'wine',
+        resultBindings: [{ variable: 'X', value: 'wine' }],
+        isRetry: true,
+        retryOfStep: 1,
+        retryRejected: [{ variable: 'X', value: 'food' }],
+      });
+
+      const output = formatTimeline([step], { debugFlags: new Set() });
+
+      // The goal is named after the query, not after the fact it happened to match
+      expect(output).toContain('Step 4: REDO likes(mary, X)');
+      expect(output).toContain('Retry of Step 1 — X = food led to failure; undone, seeking another solution');
+      expect(output).toContain('Fact: likes(mary, wine) [line 13]');
+      expect(output).toContain('=> X = wine');
+    });
+
+    it('does not duplicate the backtracking line for a retry that never exits', () => {
+      const step = createStep({
+        stepNumber: 4,
+        port: 'redo',
+        goal: 'likes(mary,_788)',
+        clause: undefined,
+        unifications: [],
+        result: undefined,
+        isRetry: true,
+        retryOfStep: 1,
+      });
+
+      const output = formatTimeline([step], { debugFlags: new Set() });
+
+      expect(output).toContain('Retry of Step 1 — seeking another solution');
+      expect(output).not.toContain('Backtracking...');
+    });
+  });
+
+  describe('result line', () => {
+    it('names the bound variable even when the output is not the last argument', () => {
+      const step = createStep({
+        stepNumber: 1,
+        goal: 'member(_1102,[a,b,c])',
+        subgoalTemplate: 'member(X, [a,b,c])',
+        exitGoal: 'member(a,[a,b,c])',
+        clause: { head: 'member(X, [X|_])', body: 'true', line: 4 },
+        unifications: [],
+        result: '[a,b,c]',
+        resultBindings: [{ variable: 'X', value: 'a' }],
+      });
+
+      const output = formatTimeline([step], { debugFlags: new Set() });
+
+      expect(output).toContain('=> X = a');
+      expect(output).not.toContain('[a,b,c] = [a,b,c]');
+    });
+
+    it('emits no result line when the goal bound nothing', () => {
+      const step = createStep({
+        stepNumber: 2,
+        goal: 'q(3)',
+        exitGoal: 'q(3)',
+        clause: { head: 'q(3)', body: 'true', line: 4 },
+        unifications: [],
+        result: '3',
+        resultBindings: [],
+      });
+
+      const output = formatTimeline([step], { debugFlags: new Set() });
+
+      expect(output).not.toContain('=>');
+    });
+  });
 });

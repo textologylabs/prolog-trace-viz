@@ -20,7 +20,7 @@ t(0+1+1, B)
 
 ## Execution Timeline
 
-┌─ Step 1: t(0+1+1, Z)
+┌─ Step 1: t(0+1+1, B)
 │  Clause: t(X+1+1, Z) [line 28]
 │  Unifications:
 │    X = 0
@@ -39,8 +39,7 @@ t(0+1+1, B)
 │  │    X = 1
 │  │  => Z = 1+1+0
 │  └─
-│  => Z = 1+1+0
-│  Query Variable: B = 1+1+0
+│  => B = 1+1+0
 └─
 
 

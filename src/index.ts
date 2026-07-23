@@ -9,9 +9,47 @@ import { executeTracer, checkDependencies } from './executor.js';
 import * as path from 'node:path';
 import { writeOutput, logVerbose, logInfo, logError } from './output.js';
 import { parsePrologFile, buildSourceClauseMap } from './clauses.js';
-import { TimelineBuilder, TraceEvent, flattenTimeline } from './timeline.js';
+import { TimelineBuilder, TraceEvent, TimelineStep, flattenTimeline } from './timeline.js';
+import { splitConjuncts, matchGoalToConjunct, extractQueryBindings } from './query.js';
 import { TreeBuilder } from './tree.js';
 import { generateMarkdown, ClauseDefinition } from './markdown-generator.js';
+
+/**
+ * Read the query's variables out of the finished derivation.
+ *
+ * Each top-level timeline step is one conjunct of the query, so pairing the
+ * conjunct's arguments with the goal as it stood at EXIT gives the bindings in
+ * the user's own variable names. Later steps win: a goal that was backtracked
+ * into and re-solved supersedes its earlier solution.
+ *
+ * Returns undefined when nothing could be read, so the caller can fall back.
+ */
+function extractFinalAnswer(timeline: TimelineStep[], query: string): string | undefined {
+  const conjuncts = splitConjuncts(query);
+  if (conjuncts.length === 0) return undefined;
+
+  // Insertion order preserved, so variables read in the order first bound.
+  const bindings = new Map<string, string>();
+
+  for (const step of timeline) {
+    if (!step.exitGoal) continue;
+    // Only conjuncts of the query carry the user's variable names; a step
+    // rendered at the top level may still be a subgoal re-entered by
+    // backtracking, and its clause-local names are not the answer.
+    const conjunct = step.subgoalTemplate && conjuncts.includes(step.subgoalTemplate)
+      ? step.subgoalTemplate
+      : matchGoalToConjunct(step.goal, conjuncts);
+    if (!conjunct || !conjuncts.includes(conjunct)) continue;
+
+    for (const { variable, value } of extractQueryBindings(conjunct, step.exitGoal)) {
+      bindings.set(variable, value);
+    }
+  }
+
+  if (bindings.size === 0) return undefined;
+
+  return [...bindings].map(([variable, value]) => `${variable} = ${value}`).join(', ');
+}
 
 /**
  * Extract variable names from original query
@@ -208,9 +246,10 @@ async function run(options: CLIOptions): Promise<void> {
     // Generate markdown
     logVerbose('Generating markdown output...', options);
     
-    // Extract final answer from tree root and map to original query variables
-    let finalAnswer: string | undefined;
-    if (tree && tree.finalBinding) {
+    // Read the answer off the top-level goals of the derivation. Falls back to
+    // the call tree's root binding, which only ever sees the first conjunct.
+    let finalAnswer: string | undefined = extractFinalAnswer(timeline, options.query);
+    if (!finalAnswer && tree && tree.finalBinding) {
       // Parse original query to get variable names
       const queryVars = extractQueryVariables(options.query);
       // Map internal variable to original query variable

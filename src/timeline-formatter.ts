@@ -45,8 +45,11 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
   const indent = '│  '.repeat(depth);
   const showInternalVars = hasDebugFlag(options, 'internal-vars');
   
-  // Step header with box drawing
-  const portLabel = step.port === 'merged' ? '' : step.port.toUpperCase() + ' ';
+  // Step header with box drawing. A retry keeps its REDO label after the
+  // following EXIT merges the next solution into it.
+  const portLabel = step.isRetry
+    ? 'REDO '
+    : step.port === 'merged' ? '' : step.port.toUpperCase() + ' ';
   // subgoalLabel is like "[1.1]", strip brackets for cleaner display
   const subgoalMarker = step.subgoalLabel ? ` [Goal ${step.subgoalLabel.slice(1, -1)}]` : '';
   
@@ -81,6 +84,15 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
     }
   }
   
+  // Explain why execution came back to this goal
+  if (step.isRetry) {
+    const retryOf = step.retryOfStep ? `Retry of Step ${step.retryOfStep}` : 'Retry';
+    const rejected = step.retryRejected?.length
+      ? `${formatBindings(step.retryRejected)} led to failure; undone, seeking another solution`
+      : 'seeking another solution';
+    lines.push(`${indent}│  ${retryOf} — ${rejected}`);
+  }
+
   // Format based on port type
   switch (step.port) {
     case 'call':
@@ -88,7 +100,9 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
       lines.push(...formatMergedContent(step, indent, showInternalVars));
       break;
     case 'redo':
-      lines.push(`${indent}│  Backtracking...`);
+      if (!step.isRetry) {
+        lines.push(`${indent}│  Backtracking...`);
+      }
       break;
     case 'fail':
       lines.push(`${indent}│  Failure`);
@@ -104,14 +118,17 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
   }
   
   // Show result AFTER children (this is the key insight!)
-  if (step.port === 'merged' && step.result) {
+  if (step.port === 'merged') {
     // Get the output variable name from clause if available, otherwise extract from goal
     const resultDisplay = formatResultDisplay(step, showInternalVars);
-    lines.push(`${indent}│  => ${resultDisplay}`);
-    
-    // Show query variable state only on root-level steps (depth 0)
-    // This prevents showing "A = ?" on intermediate steps
-    if (depth === 0 && step.queryVarState) {
+    if (resultDisplay) {
+      lines.push(`${indent}│  => ${resultDisplay}`);
+    }
+
+    // Show query variable state only on root-level steps (depth 0), and only
+    // where we could not work out precisely what the goal bound - otherwise the
+    // "=>" line above already says it, in the query's own variable names.
+    if (depth === 0 && step.queryVarState && step.result && !step.resultBindings) {
       lines.push(`${indent}│  Query Variable: ${step.queryVarState}`);
     }
   }
@@ -179,8 +196,14 @@ function formatGoalDisplay(step: TimelineStep, showInternalVars: boolean): strin
  * 2. clause head (matched clause's variable name) - fallback
  */
 function formatResultDisplay(step: TimelineStep, showInternalVars: boolean): string {
-  if (!step.result) return '?';
-  
+  // Preferred: the bindings derived by comparing the CALL and EXIT goals. An
+  // empty list means the goal bound nothing, so there is no result to show.
+  if (step.resultBindings) {
+    return formatBindings(step.resultBindings);
+  }
+
+  if (!step.result) return '';
+
   // Extract the last argument from the goal (typically the output - internal var)
   const goalMatch = step.goal.match(/^[^(]+\((.+)\)$/);
   const internalVar = goalMatch ? splitArgs(goalMatch[1]).pop() : null;
@@ -229,6 +252,13 @@ function formatResultDisplay(step: TimelineStep, showInternalVars: boolean): str
   
   // Fallback to internal var or ?
   return `${internalVar || '?'} = ${step.result}`;
+}
+
+/**
+ * Render a list of bindings as "X = wine, Y = 3"
+ */
+function formatBindings(bindings: Array<{ variable: string; value: string }>): string {
+  return bindings.map(b => `${b.variable} = ${b.value}`).join(', ');
 }
 
 /**

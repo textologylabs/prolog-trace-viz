@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Backtracking into a goal that already succeeded was invisible**: The goals of a conjunction all run at one trace level, and step state was keyed by level alone. When `likes(mary, X)` exited, its entry was deleted — so the `REDO` that came back to it found nothing and was dropped, and so was the `EXIT` carrying its second solution. `?- likes(mary, X), likes(john, X).` rendered as three unrelated steps with the retry missing entirely. Exited goals are now kept as re-enterable choice points, and a `REDO` into one emits a visible step that the following `EXIT` records the new solution against.
+- **Re-solving a goal through a deeper choice point lost the outer solution**: When backtracking re-entered a *nested* choice point, the enclosing goals succeeded a second time but their `EXIT`s had nowhere to land. Re-entering a choice point now re-enters its already-succeeded ancestors too, so the re-solution nests under the goal it belongs to.
+- **Top-level goals were named after the clause they matched, not the query**: A goal's arguments were displayed using the matched clause head, so a retry of `likes(mary, X)` announced itself as `REDO likes(mary, wine)` and the root of `factorial(3, X)` read `factorial(3, R)`. Top-level goals are now matched to the query conjunct they came from and named accordingly — the same way a subgoal is named after its parent clause's body.
+- **Result lines assumed the output was the last argument**: `member(X, [a,b,c])` reported `[a,b,c] = [a,b,c]` and a fact match reported `wine = wine`. Results are now derived by comparing the `CALL` goal with the `EXIT` goal — the arguments the caller left open and execution filled in — so `member` reports `X = a`, and a goal that bound nothing emits no result line at all.
+- **Final answer for a conjunctive query**: `?- likes(mary, X), likes(john, X).` answered `X) = food` — a greedy regex mis-split the query, and the answer was read from the call tree's root, which only ever sees the first conjunct. The answer is now read from the query variables' bindings across all top-level goals, with the last solution winning.
+
+### Changed
+- The `Query Variable:` line is no longer printed where the `=>` line above it already states the same binding in the same names. It remains for steps whose bindings cannot be derived exactly.
+
 ## [2.6.6] - 2026-05-25
 
 ### Fixed

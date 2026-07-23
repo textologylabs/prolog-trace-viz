@@ -15,7 +15,7 @@ append([1,2], [3,4], X)
 
 ## Execution Timeline
 
-┌─ Step 1: append([1,2], [3,4], [H|R])
+┌─ Step 1: append([1,2], [3,4], X)
 │  Clause: append([H|T], L, [H|R]) [line 5]
 │  Unifications:
 │    H = 1
@@ -41,8 +41,7 @@ append([1,2], [3,4], X)
 │  │  └─
 │  │  => R = [2,3,4]
 │  └─
-│  => [H|R] = [1,2,3,4]
-│  Query Variable: X = [1,2,3,4]
+│  => X = [1,2,3,4]
 └─
 
 

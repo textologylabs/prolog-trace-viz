@@ -20,8 +20,7 @@ member(X, [a,b,c])
 │  Unifications:
 │    X = a
 │    _ = [b,c]
-│  => [X|_] = [a,b,c]
-│  Query Variable: X = [a,b,c]
+│  => X = a
 └─
 
 

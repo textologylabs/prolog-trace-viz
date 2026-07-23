@@ -339,6 +339,210 @@ describe('Backtracking - REDO discards failed clause attempt', () => {
   });
 });
 
+describe('Backtracking - REDO into a goal that already succeeded', () => {
+  // ?- likes(mary, X), likes(john, X).
+  // Both conjuncts run at the same trace level. likes(john, food) fails, so
+  // Prolog backtracks into likes(mary, X) for a second solution (wine).
+  const events: TraceEvent[] = [
+    { port: 'call', level: 31, goal: 'likes(mary,_1102)', predicate: 'likes/2' },
+    {
+      port: 'exit', level: 31, goal: 'likes(mary,food)', predicate: 'likes/2',
+      clause: { head: 'likes(mary, food)', body: 'true', line: 12 },
+    },
+    { port: 'call', level: 31, goal: 'likes(john,food)', predicate: 'likes/2' },
+    { port: 'fail', level: 31, goal: 'likes(john,food)', predicate: 'likes/2' },
+    { port: 'redo', level: 31, goal: 'likes(mary,_788)', predicate: 'likes/2' },
+    {
+      port: 'exit', level: 31, goal: 'likes(mary,wine)', predicate: 'likes/2',
+      clause: { head: 'likes(mary, wine)', body: 'true', line: 13 },
+    },
+    { port: 'call', level: 31, goal: 'likes(john,wine)', predicate: 'likes/2' },
+    {
+      port: 'exit', level: 31, goal: 'likes(john,wine)', predicate: 'likes/2',
+      clause: { head: 'likes(john, wine)', body: 'true', line: 14 },
+    },
+  ];
+
+  it('emits a visible step for the retry', () => {
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+
+    const retry = timeline.find(s => s.isRetry);
+    expect(retry).toBeDefined();
+    expect(retry!.level).toBe(31);
+  });
+
+  it('attributes the second solution to the retried goal', () => {
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+    const retry = timeline.find(s => s.isRetry)!;
+
+    // The EXIT after the REDO belongs to likes(mary, X), not to a new goal.
+    expect(retry.port).toBe('merged');
+    expect(retry.clause?.line).toBe(13);
+    expect(retry.result).toBe('wine');
+  });
+
+  it('points the retry back at the step it is re-entering', () => {
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+    const first = timeline.find(s => s.clause?.line === 12)!;
+    const retry = timeline.find(s => s.isRetry)!;
+
+    expect(retry.retryOfStep).toBe(first.stepNumber);
+    expect(retry.stepNumber).toBeGreaterThan(first.stepNumber);
+  });
+
+  it('keeps the first solution and the failed conjunct in the timeline', () => {
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+
+    expect(timeline.some(s => s.clause?.line === 12)).toBe(true);
+    expect(timeline.some(s => s.port === 'fail' && s.goal === 'likes(john,food)')).toBe(true);
+    expect(timeline.some(s => s.clause?.line === 14)).toBe(true);
+  });
+
+  it('renders every solution in trace order', () => {
+    const nested = new TimelineBuilder(events).build();
+
+    expect(nested.map(s => s.clause?.line)).toEqual([12, undefined, 13, 14]);
+  });
+
+  it('re-enters a subgoal without disturbing its sibling labels', () => {
+    // p :- q(X), r(X).  r fails on the first solution of q, so q is redone.
+    const nestedEvents: TraceEvent[] = [
+      {
+        port: 'call', level: 1, goal: 'p(_A)', predicate: 'p/1',
+        clause: { head: 'p(X)', body: 'q(X), r(X)', line: 1 },
+      },
+      { port: 'call', level: 2, goal: 'q(_A)', predicate: 'q/1' },
+      {
+        port: 'exit', level: 2, goal: 'q(a)', predicate: 'q/1',
+        clause: { head: 'q(a)', body: 'true', line: 2 },
+      },
+      { port: 'call', level: 2, goal: 'r(a)', predicate: 'r/1' },
+      { port: 'fail', level: 2, goal: 'r(a)', predicate: 'r/1' },
+      { port: 'redo', level: 2, goal: 'q(_A)', predicate: 'q/1' },
+      {
+        port: 'exit', level: 2, goal: 'q(b)', predicate: 'q/1',
+        clause: { head: 'q(b)', body: 'true', line: 3 },
+      },
+      { port: 'call', level: 2, goal: 'r(b)', predicate: 'r/1' },
+      {
+        port: 'exit', level: 2, goal: 'r(b)', predicate: 'r/1',
+        clause: { head: 'r(b)', body: 'true', line: 4 },
+      },
+      { port: 'exit', level: 1, goal: 'p(b)', predicate: 'p/1',
+        clause: { head: 'p(X)', body: 'q(X), r(X)', line: 1 } },
+    ];
+
+    const nested = new TimelineBuilder(nestedEvents).build();
+    const children = nested[0].children;
+
+    // q, r(fails), REDO q, r
+    expect(children).toHaveLength(4);
+    expect(children.map(c => c.subgoalLabel)).toEqual(['[1.1]', '[1.2]', '[1.1]', '[1.2]']);
+    expect(children[2].isRetry).toBe(true);
+  });
+});
+
+describe('Query variable names', () => {
+  const events: TraceEvent[] = [
+    { port: 'call', level: 31, goal: 'likes(mary,_1102)', predicate: 'likes/2' },
+    {
+      port: 'exit', level: 31, goal: 'likes(mary,food)', predicate: 'likes/2',
+      clause: { head: 'likes(mary, food)', body: 'true', line: 12 },
+    },
+  ];
+
+  it('names a top-level goal after the query conjunct it came from', () => {
+    const timeline = flattenTimeline(
+      new TimelineBuilder(events, undefined, 'likes(mary, X), likes(john, X)').build()
+    );
+
+    expect(timeline[0].subgoalTemplate).toBe('likes(mary, X)');
+    // The bound argument is reported under the user's name, not the fact's constant
+    expect(timeline[0].resultBindings).toEqual([{ variable: 'X', value: 'food' }]);
+  });
+
+  it('reports the bound variable when the output is not the last argument', () => {
+    const memberEvents: TraceEvent[] = [
+      { port: 'call', level: 1, goal: 'member(_1102,[a,b,c])', predicate: 'member/2' },
+      {
+        port: 'exit', level: 1, goal: 'member(a,[a,b,c])', predicate: 'member/2',
+        clause: { head: 'member(X, [X|_])', body: 'true', line: 4 },
+      },
+    ];
+
+    const timeline = flattenTimeline(
+      new TimelineBuilder(memberEvents, undefined, 'member(X, [a,b,c])').build()
+    );
+
+    expect(timeline[0].resultBindings).toEqual([{ variable: 'X', value: 'a' }]);
+  });
+
+  it('reports no bindings for a goal that bound nothing', () => {
+    const groundEvents: TraceEvent[] = [
+      { port: 'call', level: 1, goal: 'q(3)', predicate: 'q/1' },
+      {
+        port: 'exit', level: 1, goal: 'q(3)', predicate: 'q/1',
+        clause: { head: 'q(3)', body: 'true', line: 4 },
+      },
+    ];
+
+    const timeline = flattenTimeline(
+      new TimelineBuilder(groundEvents, undefined, 'q(3)').build()
+    );
+
+    expect(timeline[0].resultBindings).toEqual([]);
+  });
+});
+
+describe('Backtracking - REDO through a nested choice point', () => {
+  // ?- member(X, [1,2]), X > 1.  The second solution of the top-level member
+  // comes from backtracking into its recursive subgoal, so the outer goal EXITs
+  // a second time and must be re-entered along with it.
+  const events: TraceEvent[] = [
+    { port: 'call', level: 1, goal: 'member(_A,[1,2])', predicate: 'member/2' },
+    {
+      port: 'exit', level: 1, goal: 'member(1,[1,2])', predicate: 'member/2',
+      clause: { head: 'member(X, [X|_])', body: 'true', line: 1 },
+    },
+    { port: 'call', level: 1, goal: '1>1', predicate: '>/2' },
+    { port: 'fail', level: 1, goal: '1>1', predicate: '>/2' },
+    {
+      port: 'redo', level: 1, goal: 'member(_A,[1,2])', predicate: 'member/2',
+      clause: { head: 'member(X, [_|T])', body: 'member(X, T)', line: 2 },
+    },
+    { port: 'call', level: 2, goal: 'member(_A,[2])', predicate: 'member/2' },
+    {
+      port: 'exit', level: 2, goal: 'member(2,[2])', predicate: 'member/2',
+      clause: { head: 'member(X, [X|_])', body: 'true', line: 1 },
+    },
+    {
+      port: 'exit', level: 1, goal: 'member(2,[1,2])', predicate: 'member/2',
+      clause: { head: 'member(X, [_|T])', body: 'member(X, T)', line: 2 },
+    },
+    { port: 'redo', level: 2, goal: 'member(_A,[2])', predicate: 'member/2' },
+    { port: 'call', level: 3, goal: 'member(_A,[])', predicate: 'member/2' },
+    { port: 'fail', level: 3, goal: 'member(_A,[])', predicate: 'member/2' },
+  ];
+
+  it('re-enters the enclosing goal, not just the inner choice point', () => {
+    const nested = new TimelineBuilder(events, undefined, 'member(X, [1,2]), X > 1').build();
+
+    // Two re-entries of the outer goal: the first from its own choice point,
+    // the second dragged along when its recursive subgoal was re-entered.
+    const outerRetries = nested.filter(s => s.isRetry && s.level === 1);
+    expect(outerRetries).toHaveLength(2);
+    expect(outerRetries[1].children.some(c => c.isRetry && c.level === 2)).toBe(true);
+  });
+
+  it('records the second solution against the top-level goal', () => {
+    const nested = new TimelineBuilder(events, undefined, 'member(X, [1,2]), X > 1').build();
+    const outerRetry = nested.find(s => s.isRetry)!;
+
+    expect(outerRetry.exitGoal).toBe('member(2,[1,2])');
+    expect(outerRetry.resultBindings).toEqual([{ variable: 'X', value: '2' }]);
+  });
+});
+
 describe('Nested timeline structure', () => {
   it('should nest children inside parent steps', () => {
     const events: TraceEvent[] = [
