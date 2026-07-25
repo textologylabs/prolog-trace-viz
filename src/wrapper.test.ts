@@ -45,6 +45,34 @@ describe('Wrapper Generator - Unit Tests', () => {
       expect(wrapper).toContain("export_trace_json('trace.json')");
     });
 
+    it('enumerates one solution by default via findnsols', () => {
+      const config: WrapperConfig = {
+        prologContent: 'likes(mary, food).',
+        query: 'likes(mary, X)',
+        tracerPath: 'tracer.pl',
+      };
+
+      const wrapper = generateWrapper(config);
+
+      expect(wrapper).toContain('findnsols(1, _, (likes(mary, X), record_solution(');
+      // The query's variables are snapshotted as Name=Var pairs.
+      expect(wrapper).toContain("record_solution(['X'=X])");
+    });
+
+    it('enumerates N solutions and captures all query variables', () => {
+      const config: WrapperConfig = {
+        prologContent: 'append([], L, L).',
+        query: 'append(A, B, [1,2])',
+        tracerPath: 'tracer.pl',
+        solutions: 5,
+      };
+
+      const wrapper = generateWrapper(config);
+
+      expect(wrapper).toContain('findnsols(5, _,');
+      expect(wrapper).toContain("record_solution(['A'=A, 'B'=B])");
+    });
+
     it('should include tracer lifecycle calls', () => {
       const config: WrapperConfig = {
         prologContent: 'test.',

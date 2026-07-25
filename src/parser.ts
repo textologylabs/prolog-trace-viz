@@ -1,5 +1,6 @@
 import { createError, ErrorCode, ToolError } from './errors.js';
 import { mapWrapperLineToSource } from './wrapper.js';
+import { parseSolutionBindings } from './query.js';
 
 export interface Unification {
   variable: string;
@@ -7,7 +8,7 @@ export interface Unification {
 }
 
 export interface TraceEvent {
-  port: 'call' | 'exit' | 'redo' | 'fail';
+  port: 'call' | 'exit' | 'redo' | 'fail' | 'solution';
   level: number;
   goal: string;
   arguments?: any[];
@@ -22,6 +23,8 @@ export interface TraceEvent {
     level: number;
     goal: string;
   };
+  /** For 'solution' markers: the query variables' bindings at that solution. */
+  bindings?: Unification[];
 }
 
 export interface ExecutionNode {
@@ -487,7 +490,26 @@ export function parseEvents(json: string, prologContent?: string): TraceEvent[] 
       console.warn(`Trace truncated at depth ${rawEvent.max_depth}`);
       continue;
     }
-    
+
+    // Check for solution-boundary marker (one per enumerated solution)
+    if (rawEvent.solution === true) {
+      events.push({
+        port: 'solution',
+        level: 0,
+        goal: '',
+        predicate: '',
+        bindings: parseSolutionBindings(typeof rawEvent.bindings === 'string' ? rawEvent.bindings : '[]'),
+      });
+      continue;
+    }
+
+    // Drop findnsols' internal completion goal (a bare `_=true` under
+    // $c_call_prolog); it is enumeration machinery, not part of the derivation.
+    if (rawEvent.parent_info?.goal && typeof rawEvent.parent_info.goal === 'string'
+        && rawEvent.parent_info.goal.includes('$c_call_prolog')) {
+      continue;
+    }
+
     const { level, goal, predicate } = rawEvent;
 
     // SWI-Prolog emits REDO events as "redo(N)" (N = clause index). Normalize
@@ -575,6 +597,8 @@ export function parseEvents(json: string, prologContent?: string): TraceEvent[] 
 function isSystemPredicate(predicate: string): boolean {
   const systemPredicates = [
     'findall/3',
+    'findnsols/4',
+    'record_solution/1',
     'trace_event/1',
     'export_trace_json/1',
     'open/3',

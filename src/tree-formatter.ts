@@ -6,7 +6,7 @@
  */
 
 import { TreeNode } from './tree.js';
-import { TimelineStep } from './timeline.js';
+import { TimelineStep, Solution } from './timeline.js';
 import { DebugFlag } from './cli.js';
 
 export interface TreeFormatterOptions {
@@ -82,7 +82,8 @@ export function formatTimelineAsMermaid(
   steps: TimelineStep[],
   query: string,
   finalAnswer?: string,
-  options: TreeFormatterOptions = {}
+  options: TreeFormatterOptions = {},
+  solutions?: Solution[]
 ): string {
   if (steps.length === 0) {
     return [MERMAID_INIT, 'graph TD', '', '%% Nodes', `A["${escapeLabel('?- ' + query)}"]`].join('\n');
@@ -125,8 +126,14 @@ export function formatTimelineAsMermaid(
         const deadEnd =
           (step.backtrackFromStep !== undefined ? idOfStep.get(step.backtrackFromStep) : undefined)
           ?? idOfStep.get(step.stepNumber - 1) ?? prevId ?? parentId;
-        edges.push(`${deadEnd} -.->|"backtrack to ${toCircledNumber(step.retryOfStep!)}"| ${origin}`);
-        edges.push(`${origin} ==>|"retry"| ${id}`);
+        // A distinct failure returns to the choice point via a dotted edge. When
+        // the retry is enumeration-driven (asking the goal for its next solution,
+        // no failure), there is no dead end — skip the edge rather than loop it
+        // back onto the origin.
+        if (deadEnd && deadEnd !== origin) {
+          edges.push(`${deadEnd} -.->|"backtrack to ${toCircledNumber(step.retryOfStep!)}"| ${origin}`);
+        }
+        edges.push(`${origin} ==>|"next solution"| ${id}`);
       } else {
         edges.push(`${prevId ?? parentId} --> ${id}`);
       }
@@ -139,8 +146,26 @@ export function formatTimelineAsMermaid(
 
   const lastId = walk(steps, rootId);
 
-  // Terminal ✓ node carrying the answer, off the last goal in the flow.
-  if (finalAnswer && lastId) {
+  if (solutions && solutions.length > 1) {
+    // A forest: one ✓ leaf per solution, hung off the last top-level step of
+    // that solution's segment. Turns the flow into the full search tree.
+    for (const sol of solutions) {
+      let anchor: TimelineStep | undefined;
+      for (const step of steps) {
+        if (step.solutionIndex === sol.index) anchor = step;
+      }
+      const anchorId = anchor ? idOfStep.get(anchor.stepNumber) : lastId;
+      if (!anchorId) continue;
+      const termId = nextId();
+      const label = sol.bindings.length
+        ? sol.bindings.map(b => `${b.variable} = ${b.value}`).join(', ')
+        : 'true';
+      nodes.push(`${termId}["${escapeLabel(`✓ solution ${sol.index}: ${label}`)}"]`);
+      styles.push(`style ${termId} ${NODE_STYLE.answer}`);
+      edges.push(`${anchorId} --> ${termId}`);
+    }
+  } else if (finalAnswer && lastId) {
+    // Single solution: one terminal ✓ node carrying the answer.
     const termId = nextId();
     nodes.push(`${termId}["${escapeLabel('✓ ' + finalAnswer)}"]`);
     styles.push(`style ${termId} ${NODE_STYLE.answer}`);

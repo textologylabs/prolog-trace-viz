@@ -2,7 +2,7 @@
  * Markdown Output Generator - Generates complete markdown document
  */
 
-import { TimelineStep } from './timeline.js';
+import { TimelineStep, Solution } from './timeline.js';
 import { TreeNode } from './tree.js';
 import { formatTimeline, TimelineFormatterOptions } from './timeline-formatter.js';
 import { formatTimelineAsMermaid, TreeFormatterOptions } from './tree-formatter.js';
@@ -26,9 +26,17 @@ export interface MarkdownContext {
   tree: TreeNode | null;
   clauses: ClauseDefinition[];
   finalAnswer?: string;
+  solutions?: Solution[];
+  /** Footer label for a single-solution doc (e.g. a split file): "Solution 2 of 4". */
+  singleSolutionLabel?: string;
   truncated?: boolean;
   maxDepth?: number;
   formatterOptions?: FormatterOptions;
+}
+
+/** True when the trace enumerated more than one solution. */
+function isMultiSolution(context: MarkdownContext): boolean {
+  return (context.solutions?.length ?? 0) > 1;
 }
 
 /**
@@ -48,7 +56,13 @@ export function generateMarkdown(context: MarkdownContext): string {
   // Clause definitions
   sections.push(generateClausesSection(context));
   sections.push('');
-  
+
+  // Solutions summary (only when more than one solution was enumerated)
+  if (isMultiSolution(context)) {
+    sections.push(generateSolutionsSection(context));
+    sections.push('');
+  }
+
   // Timeline
   sections.push(generateTimelineSection(context));
   sections.push('');
@@ -129,10 +143,32 @@ function generateTimelineSection(context: MarkdownContext): string {
   
   const formatterOptions: TimelineFormatterOptions = {
     debugFlags: context.formatterOptions?.debugFlags ?? new Set(),
+    solutionCount: context.solutions?.length,
   };
-  
+
   lines.push(formatTimeline(context.timeline, formatterOptions));
-  
+
+  return lines.join('\n');
+}
+
+/**
+ * Generate the solutions summary table (multi-solution traces only).
+ */
+function generateSolutionsSection(context: MarkdownContext): string {
+  const lines: string[] = [];
+  const solutions = context.solutions ?? [];
+
+  lines.push(`## Solutions (${solutions.length})`);
+  lines.push('');
+  lines.push('| # | Bindings |');
+  lines.push('|---|----------|');
+  for (const sol of solutions) {
+    const bindings = sol.bindings.length
+      ? sol.bindings.map(b => `\`${b.variable} = ${b.value}\``).join(', ')
+      : '_(no variables — succeeded)_';
+    lines.push(`| ${sol.index} | ${bindings} |`);
+  }
+
   return lines.join('\n');
 }
 
@@ -156,7 +192,7 @@ function generateTreeSection(context: MarkdownContext): string {
 
   const query = context.originalQuery || context.query;
   lines.push('```mermaid');
-  lines.push(formatTimelineAsMermaid(context.timeline, query, context.finalAnswer, formatterOptions));
+  lines.push(formatTimelineAsMermaid(context.timeline, query, context.finalAnswer, formatterOptions, context.solutions));
   lines.push('```');
 
   return lines.join('\n');
@@ -167,10 +203,21 @@ function generateTreeSection(context: MarkdownContext): string {
  */
 function generateFinalAnswerSection(context: MarkdownContext): string {
   const lines: string[] = [];
-  
+
+  // Multi-solution: the Solutions table above already lists every answer, so
+  // just close with a count note rather than repeating a single "final answer".
+  if (isMultiSolution(context)) {
+    if (context.truncated && context.maxDepth) {
+      lines.push(`_Note: Trace truncated at depth ${context.maxDepth}_`);
+      lines.push('');
+    }
+    lines.push(`_Showing ${context.solutions!.length} solutions._`);
+    return lines.join('\n');
+  }
+
   lines.push('## Final Answer');
   lines.push('');
-  
+
   if (context.finalAnswer) {
     lines.push('```');
     lines.push(context.finalAnswer);
@@ -178,15 +225,15 @@ function generateFinalAnswerSection(context: MarkdownContext): string {
   } else {
     lines.push('Query succeeded with no bindings.');
   }
-  
+
   // Add notes about truncation or first solution
   if (context.truncated && context.maxDepth) {
     lines.push('');
     lines.push(`_Note: Trace truncated at depth ${context.maxDepth}_`);
   }
-  
+
   lines.push('');
-  lines.push('_Showing first solution only._');
-  
+  lines.push(`_${context.singleSolutionLabel ?? 'Showing first solution only'}._`);
+
   return lines.join('\n');
 }

@@ -3,6 +3,8 @@ import {
   splitConjuncts,
   matchGoalToConjunct,
   extractQueryBindings,
+  extractQueryVariables,
+  parseSolutionBindings,
 } from './query.js';
 
 describe('splitConjuncts', () => {
@@ -51,5 +53,37 @@ describe('extractQueryBindings', () => {
     expect(extractQueryBindings('member(X, [a,b,c])', 'member(a,[a,b,c])')).toEqual([
       { variable: 'X', value: 'a' },
     ]);
+  });
+});
+
+describe('extractQueryVariables', () => {
+  it('collects distinct variables in order of appearance', () => {
+    expect(extractQueryVariables('likes(mary, X), likes(john, X)')).toEqual(['X']);
+    expect(extractQueryVariables('append(A, B, [1,2])')).toEqual(['A', 'B']);
+  });
+
+  it('drops the anonymous variable', () => {
+    expect(extractQueryVariables('member(X, [_|T])')).toEqual(['X', 'T']);
+  });
+
+  it('returns [] for a ground query', () => {
+    expect(extractQueryVariables('likes(john, mary)')).toEqual([]);
+  });
+});
+
+describe('parseSolutionBindings', () => {
+  it('parses a marker binding term into pairs', () => {
+    expect(parseSolutionBindings('[X=food]')).toEqual([{ variable: 'X', value: 'food' }]);
+  });
+
+  it('handles multiple, list-valued bindings', () => {
+    expect(parseSolutionBindings('[A=[1,2],B=[3]]')).toEqual([
+      { variable: 'A', value: '[1,2]' },
+      { variable: 'B', value: '[3]' },
+    ]);
+  });
+
+  it('returns [] for a ground solution', () => {
+    expect(parseSolutionBindings('[]')).toEqual([]);
   });
 });

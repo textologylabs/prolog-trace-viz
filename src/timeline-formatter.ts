@@ -11,6 +11,8 @@ import { DebugFlag } from './cli.js';
 
 export interface TimelineFormatterOptions {
   debugFlags?: Set<DebugFlag>;
+  /** When > 1, insert a "Solution N" divider before each solution's first step. */
+  solutionCount?: number;
 }
 
 /**
@@ -25,12 +27,20 @@ function hasDebugFlag(options: TimelineFormatterOptions, flag: DebugFlag): boole
  */
 export function formatTimeline(steps: TimelineStep[], options: TimelineFormatterOptions = {}): string {
   const lines: string[] = [];
-  
+  const showDividers = (options.solutionCount ?? 1) > 1;
+  let shownSolution: number | undefined;
+
   for (const step of steps) {
+    if (showDividers && step.solutionIndex !== undefined && step.solutionIndex !== shownSolution) {
+      if (shownSolution !== undefined) lines.push('');
+      lines.push(`──────── Solution ${step.solutionIndex} ────────`);
+      lines.push('');
+      shownSolution = step.solutionIndex;
+    }
     lines.push(...formatStepNested(step, 0, options));
     lines.push('');
   }
-  
+
   return lines.join('\n');
 }
 
@@ -87,10 +97,12 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
   // Explain why execution came back to this goal
   if (step.isRetry) {
     const retryOf = step.retryOfStep ? `Retry of Step ${step.retryOfStep}` : 'Retry';
-    const rejected = step.retryRejected?.length
+    // A failure triggered it (backtrackFromStep set) → name the binding it undid.
+    // Otherwise it's enumeration asking the goal for its next solution.
+    const reason = step.backtrackFromStep !== undefined && step.retryRejected?.length
       ? `${formatBindings(step.retryRejected)} led to failure; undone, seeking another solution`
       : 'seeking another solution';
-    lines.push(`${indent}│  ${retryOf} — ${rejected}`);
+    lines.push(`${indent}│  ${retryOf} — ${reason}`);
   }
 
   // Format based on port type

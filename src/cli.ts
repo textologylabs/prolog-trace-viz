@@ -11,6 +11,9 @@ export type DebugFlag = 'internal-vars';
  */
 export const ALL_DEBUG_FLAGS: DebugFlag[] = ['internal-vars'];
 
+/** Upper bound on solutions enumerated by `--all`. */
+export const ALL_SOLUTIONS_CAP = 10;
+
 export interface CLIOptions {
   prologFile: string;
   query: string;
@@ -20,6 +23,12 @@ export interface CLIOptions {
   quiet: boolean;
   debugFlags: Set<DebugFlag>;
   showCallTree: boolean;
+  /** How many solutions to enumerate (default 1). */
+  solutions: number;
+  /** Enumerate all solutions, up to ALL_SOLUTIONS_CAP. */
+  allSolutions: boolean;
+  /** Also write one file per solution: <source>-soln1.md, -soln2.md, … */
+  split: boolean;
 }
 
 export interface CLIResult {
@@ -41,6 +50,9 @@ ARGUMENTS:
 OPTIONS:
   -o, --output <file>     Write output to file instead of stdout
   --depth <n>             Maximum trace depth (default: 100)
+  -n, --solutions <n>     Trace up to n solutions (default: 1)
+  --all                   Trace all solutions (capped at ${ALL_SOLUTIONS_CAP})
+  --split                 Also write one file per solution (<source>-soln1.md, …)
   --tree                  Include call tree diagram (Mermaid) in output
   --debug                 Enable all debug features
   --debug:<flag>          Enable specific debug flag (e.g., --debug:internal-vars)
@@ -90,6 +102,9 @@ export function parseArgs(argv: string[]): CLIResult {
     quiet: false,
     debugFlags: new Set<DebugFlag>(),
     showCallTree: false,
+    solutions: 1,
+    allSolutions: false,
+    split: false,
   };
   
   const positionalArgs: string[] = [];
@@ -150,6 +165,20 @@ export function parseArgs(argv: string[]): CLIResult {
           };
         }
       }
+    } else if (arg === '-n' || arg === '--solutions') {
+      const nextArg = args[++i];
+      const n = parseInt(nextArg, 10);
+      if (!nextArg || isNaN(n) || n < 1) {
+        return {
+          type: 'error',
+          error: createError(ErrorCode.INVALID_ARGS, `${arg} requires a positive integer`),
+        };
+      }
+      options.solutions = n;
+    } else if (arg === '--all') {
+      options.allSolutions = true;
+    } else if (arg === '--split') {
+      options.split = true;
     } else if (arg === '--tree') {
       options.showCallTree = true;
     } else if (arg === '--verbose') {
@@ -212,6 +241,9 @@ export function parseArgs(argv: string[]): CLIResult {
       quiet: options.quiet!,
       debugFlags: options.debugFlags!,
       showCallTree: options.showCallTree!,
+      solutions: options.solutions!,
+      allSolutions: options.allSolutions!,
+      split: options.split!,
     },
   };
 }

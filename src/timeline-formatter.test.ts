@@ -363,6 +363,7 @@ describe('Timeline Formatter', () => {
         resultBindings: [{ variable: 'X', value: 'wine' }],
         isRetry: true,
         retryOfStep: 1,
+        backtrackFromStep: 3,
         retryRejected: [{ variable: 'X', value: 'food' }],
       });
 
