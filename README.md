@@ -242,6 +242,32 @@ npm run build
 npm test
 ```
 
+Every push and pull request against `main` runs the build, type-check, and
+tests on CI (SWI-Prolog is installed in the runner). `main` is protected: land
+changes through a pull request with a green CI check.
+
+## Releasing
+
+Releases are cut locally and published by CI:
+
+```
+# On main, working tree clean:
+npm run release patch      # or minor / major / x.y.z
+git push origin main --tags
+```
+
+`npm run release` bumps the version, regenerates build info, builds, runs the
+tests, updates the changelog, commits `🔖 release vX.Y.Z`, and creates the
+matching `vX.Y.Z` tag. Pushing that tag triggers the **Publish** workflow,
+which rebuilds, retests, and runs `npm publish` (with provenance).
+
+One-time setup: create an **Automation** access token on npmjs.com (Automation
+tokens bypass 2FA) and store it as a repository secret:
+
+```
+gh secret set NPM_TOKEN --repo textologylabs/prolog-trace-viz
+```
+
 ## Licence
 
 MIT
