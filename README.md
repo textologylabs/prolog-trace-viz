@@ -51,6 +51,10 @@ prolog-trace-viz <prolog-file> <query> [options]
 |--------|-------------|
 | `-o, --output <file>` | Write output to file (default: `<source>-output.md`) |
 | `--depth <number>` | Maximum trace depth to capture (default: 100) |
+| `-n, --solutions <n>` | Trace up to `n` solutions (default: 1) |
+| `--all` | Trace all solutions (capped at 10) |
+| `--split` | Also write one file per solution: `<source>-soln1.md`, `-soln2.md`, … |
+| `--tree` | Include the call tree diagram (Mermaid) |
 | `--debug` | Enable all debug features |
 | `--debug:<flag>` | Enable specific debug flag (e.g., `--debug:internal-vars`) |
 | `--verbose` | Display detailed processing information |
@@ -60,6 +64,25 @@ prolog-trace-viz <prolog-file> <query> [options]
 
 ptv automatically checks npm for a newer release (at most once per day) and
 offers to install it. Use `--quiet` to skip that check.
+
+### Multiple solutions
+
+By default ptv traces the **first** solution. Ask for more with `-n` (or `--all`,
+capped at 10):
+
+```
+prolog-trace-viz likes.pl "likes(mary, X)" -n 5 --tree
+```
+
+The output gains a **Solutions** summary table, the timeline is split by
+`──── Solution N ────` dividers, and the call tree becomes a **forest** — one
+`✓` leaf per solution, with `next solution` edges showing how backtracking
+enumerates them. Enumeration is one continuous trace (Prolog backtracks from one
+solution into the next), not N independent runs.
+
+Add `--split` to also emit a self-contained file per solution
+(`<source>-soln1.md`, `-soln2.md`, …), each covering that solution's segment of
+the derivation.
 
 ### Debug Flags
 

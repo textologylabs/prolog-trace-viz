@@ -196,10 +196,10 @@ describe('formatTimelineAsMermaid - conjunctive backtracking', () => {
     expect((flow.match(/^A --> /gm) || []).length).toBe(1);
   });
 
-  it('renders backtracking as a numbered loop: dead end back to the choice point, then a retry', () => {
+  it('renders backtracking as a numbered loop: dead end back to the choice point, then the next solution', () => {
     const out = formatTimelineAsMermaid(build(), query, 'X = wine');
     expect(out).toMatch(/-\.->\|"backtrack to ①"\| /);
-    expect(out).toMatch(/==>\|"retry"\| /);
+    expect(out).toMatch(/==>\|"next solution"\| /);
   });
 
   it('ends on a ✓ node carrying the answer', () => {
@@ -235,6 +235,44 @@ describe('formatTimelineAsMermaid - conjunctive backtracking', () => {
   it('returns a placeholder when there are no steps', () => {
     const out = formatTimelineAsMermaid([], query);
     expect(out).toContain('graph TD');
+  });
+});
+
+describe('formatTimelineAsMermaid - multiple solutions (forest)', () => {
+  const events: TraceEvent[] = [
+    { port: 'call', level: 1, goal: 'likes(mary,_1)', predicate: 'likes/2' },
+    {
+      port: 'exit', level: 1, goal: 'likes(mary,food)', predicate: 'likes/2',
+      clause: { head: 'likes(mary, food)', body: 'true', line: 12 },
+    },
+    { port: 'solution', level: 0, goal: '', predicate: '', bindings: [{ variable: 'X', value: 'food' }] },
+    { port: 'redo', level: 1, goal: 'likes(mary,_2)', predicate: 'likes/2' },
+    {
+      port: 'exit', level: 1, goal: 'likes(mary,wine)', predicate: 'likes/2',
+      clause: { head: 'likes(mary, wine)', body: 'true', line: 13 },
+    },
+    { port: 'solution', level: 0, goal: '', predicate: '', bindings: [{ variable: 'X', value: 'wine' }] },
+  ];
+  const query = 'likes(mary, X)';
+  const build = () => {
+    const b = new TimelineBuilder(events, undefined, query);
+    return { steps: b.build(), solutions: b.getSolutions() };
+  };
+
+  it('hangs one ✓ leaf per solution off its own step', () => {
+    const { steps, solutions } = build();
+    const out = formatTimelineAsMermaid(steps, query, undefined, {}, solutions);
+    expect(out).toContain('✓ solution 1: X = food');
+    expect(out).toContain('✓ solution 2: X = wine');
+  });
+
+  it('links solutions with a "next solution" edge and no failure/backtrack loop', () => {
+    const { steps, solutions } = build();
+    const out = formatTimelineAsMermaid(steps, query, undefined, {}, solutions);
+    expect(out).toMatch(/==>\|"next solution"\|/);
+    // Enumeration, not failure: no dotted backtrack edge, and never a self-loop.
+    expect(out).not.toContain('-.->');
+    expect(out).not.toMatch(/([A-Z]+) -\.->\|[^|]*\| \1/);
   });
 });
 

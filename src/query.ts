@@ -126,6 +126,43 @@ export function extractQueryBindings(conjunct: string, exitGoal: string): QueryB
 }
 
 /**
+ * Distinct variables of a query, in order of first appearance, dropping the
+ * anonymous `_`. Used to snapshot bindings at each solution.
+ * "likes(mary, X), likes(john, X)" -> ["X"];  "append(A, B, [1,2])" -> ["A","B"]
+ */
+export function extractQueryVariables(query: string): string[] {
+  const vars: string[] = [];
+  const regex = /\b([A-Z_][A-Za-z0-9_]*)\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(query)) !== null) {
+    const name = match[1];
+    if (name !== '_' && !vars.includes(name)) vars.push(name);
+  }
+  return vars;
+}
+
+/**
+ * Parse a solution marker's binding term, as printed by Prolog, into pairs.
+ * "[X=food]" -> [{variable:'X', value:'food'}];  "[]" -> []
+ */
+export function parseSolutionBindings(raw: string): QueryBinding[] {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return [];
+  const inner = trimmed.slice(1, -1).trim();
+  if (inner === '') return [];
+
+  const bindings: QueryBinding[] = [];
+  for (const pair of splitArguments(inner)) {
+    const eq = pair.indexOf('=');
+    if (eq === -1) continue;
+    const variable = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    if (variable) bindings.push({ variable, value });
+  }
+  return bindings;
+}
+
+/**
  * Split an argument list, respecting nested brackets.
  */
 export function splitArguments(argsStr: string): string[] {

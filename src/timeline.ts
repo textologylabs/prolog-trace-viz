@@ -38,6 +38,7 @@ export interface TimelineStep {
   isRetry?: boolean;        // REDO: this step re-enters a goal that already succeeded
   retryOfStep?: number;     // For retry steps: the step number of the solution being re-entered
   backtrackFromStep?: number; // For retry steps: the failure that triggered the backtracking
+  solutionIndex?: number;   // Which enumerated solution's work this step belongs to (1-based)
   retryRejected?: Array<{ variable: string; value: string }>; // The bindings backtracking undid
   children: TimelineStep[]; // Nested child steps
 }
@@ -61,7 +62,7 @@ export function flattenTimeline(steps: TimelineStep[]): TimelineStep[] {
 }
 
 export interface TraceEvent {
-  port: 'call' | 'exit' | 'redo' | 'fail';
+  port: 'call' | 'exit' | 'redo' | 'fail' | 'solution';
   level: number;
   goal: string;
   predicate: string;
@@ -75,6 +76,13 @@ export interface TraceEvent {
     level: number;
     goal: string;
   };
+  bindings?: Array<{ variable: string; value: string }>;
+}
+
+/** One enumerated solution: its 1-based index and the query variables' bindings. */
+export interface Solution {
+  index: number;
+  bindings: Array<{ variable: string; value: string }>;
 }
 
 /**
@@ -97,6 +105,10 @@ export class TimelineBuilder {
   private retryTrigger: Map<TimelineStep, TimelineStep> = new Map();
   // Top-level goals of the query, in the user's own variable names
   private queryConjuncts: string[] = [];
+  // Solution enumeration: which solution's work we are currently in (1-based),
+  // and the solutions collected from the boundary markers.
+  private currentSolution = 1;
+  private solutions: Solution[] = [];
   // step -> the step it is nested in (undefined for top-level goals)
   private parentOf: Map<TimelineStep, TimelineStep | undefined> = new Map();
   // step -> which of its parent's subgoals it is solving. Retry steps re-solve
@@ -170,7 +182,27 @@ export class TimelineBuilder {
       case 'fail':
         this.processFail(event);
         break;
+      case 'solution':
+        this.processSolution(event);
+        break;
     }
+  }
+
+  /**
+   * A solution-boundary marker: record the solution with the current index and
+   * bindings, then advance so subsequent steps belong to the next solution.
+   */
+  private processSolution(event: TraceEvent): void {
+    this.solutions.push({
+      index: this.currentSolution,
+      bindings: event.bindings ?? [],
+    });
+    this.currentSolution++;
+  }
+
+  /** The solutions enumerated during build(), in order. */
+  getSolutions(): Solution[] {
+    return this.solutions;
   }
 
   /**
@@ -224,6 +256,7 @@ export class TimelineBuilder {
       clause: clauseInfo,
       unifications,
       subgoals,
+      solutionIndex: this.currentSolution,
       children: [],
     };
     
@@ -396,6 +429,7 @@ export class TimelineBuilder {
       unifications: [],
       subgoals: [],
       isRetry: true,
+      solutionIndex: this.currentSolution,
       children: [],
     };
 
@@ -477,6 +511,7 @@ export class TimelineBuilder {
       goal: event.goal,
       unifications: [],
       subgoals: [],
+      solutionIndex: this.currentSolution,
       children: [],
     };
     

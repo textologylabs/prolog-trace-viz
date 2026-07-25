@@ -560,6 +560,44 @@ describe('Backtracking - REDO through a nested choice point', () => {
   });
 });
 
+describe('Multiple solutions', () => {
+  // ?- likes(mary, X). enumerated: food, then wine (findnsols asks for more).
+  const events: TraceEvent[] = [
+    { port: 'call', level: 1, goal: 'likes(mary,_1)', predicate: 'likes/2' },
+    {
+      port: 'exit', level: 1, goal: 'likes(mary,food)', predicate: 'likes/2',
+      clause: { head: 'likes(mary, food)', body: 'true', line: 12 },
+    },
+    { port: 'solution', level: 0, goal: '', predicate: '', bindings: [{ variable: 'X', value: 'food' }] },
+    { port: 'redo', level: 1, goal: 'likes(mary,_2)', predicate: 'likes/2' },
+    {
+      port: 'exit', level: 1, goal: 'likes(mary,wine)', predicate: 'likes/2',
+      clause: { head: 'likes(mary, wine)', body: 'true', line: 13 },
+    },
+    { port: 'solution', level: 0, goal: '', predicate: '', bindings: [{ variable: 'X', value: 'wine' }] },
+  ];
+
+  it('collects each solution with its bindings', () => {
+    const builder = new TimelineBuilder(events, undefined, 'likes(mary, X)');
+    builder.build();
+    expect(builder.getSolutions()).toEqual([
+      { index: 1, bindings: [{ variable: 'X', value: 'food' }] },
+      { index: 2, bindings: [{ variable: 'X', value: 'wine' }] },
+    ]);
+  });
+
+  it('tags each step with the solution it belongs to', () => {
+    const timeline = flattenTimeline(new TimelineBuilder(events, undefined, 'likes(mary, X)').build());
+    const first = timeline.find(s => s.clause?.line === 12)!;
+    const second = timeline.find(s => s.clause?.line === 13)!;
+    expect(first.solutionIndex).toBe(1);
+    expect(second.solutionIndex).toBe(2);
+    // The second solution came from enumeration, not a failure.
+    expect(second.isRetry).toBe(true);
+    expect(second.backtrackFromStep).toBeUndefined();
+  });
+});
+
 describe('Nested timeline structure', () => {
   it('should nest children inside parent steps', () => {
     const events: TraceEvent[] = [

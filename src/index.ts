@@ -2,7 +2,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
-import { parseArgs, getHelpText, getVersion, getCopyright, CLIOptions } from './cli.js';
+import { parseArgs, getHelpText, getVersion, getCopyright, CLIOptions, ALL_SOLUTIONS_CAP } from './cli.js';
 import { formatError } from './errors.js';
 import { createTempWrapper } from './wrapper.js';
 import { executeTracer, checkDependencies } from './executor.js';
@@ -183,6 +183,8 @@ async function run(options: CLIOptions): Promise<void> {
 
   // Create wrapper (no instrumentation needed)
   logVerbose('Creating tracer wrapper...', options);
+  const effectiveSolutions = options.allSolutions ? ALL_SOLUTIONS_CAP : options.solutions;
+
   const tempFile = await createTempWrapper({
     prologContent,
     query: options.query,
@@ -190,6 +192,7 @@ async function run(options: CLIOptions): Promise<void> {
     tracerPath,
     tracePath: absTraceJson,
     tempDir,
+    solutions: effectiveSolutions,
   });
 
   try {
@@ -231,10 +234,12 @@ async function run(options: CLIOptions): Promise<void> {
     const timelineBuilder = new TimelineBuilder(traceEvents, sourceClauseMap, options.query);
     const timeline = timelineBuilder.build();
     const flatTimeline = flattenTimeline(timeline);
-    
-    // Build tree
+    const solutions = timelineBuilder.getSolutions();
+
+    // Build tree (legacy; only for the final-answer fallback). Solution markers
+    // aren't goals, so keep them out of its level bookkeeping.
     logVerbose('Building call tree...', options);
-    const treeBuilder = new TreeBuilder(traceEvents, sourceClauseMap, flatTimeline);
+    const treeBuilder = new TreeBuilder(traceEvents.filter(e => e.port !== 'solution'), sourceClauseMap, flatTimeline);
     const tree = treeBuilder.build();
     
     // Prepare clause definitions
@@ -256,6 +261,11 @@ async function run(options: CLIOptions): Promise<void> {
       finalAnswer = mapBindingToOriginalQuery(tree.finalBinding, tree.goal, options.query, queryVars);
     }
     
+    const formatterOptions = {
+      debugFlags: options.debugFlags,
+      showCallTree: options.showCallTree,
+    };
+
     const markdown = generateMarkdown({
       query: options.query,
       originalQuery: options.query,
@@ -263,12 +273,10 @@ async function run(options: CLIOptions): Promise<void> {
       tree,
       clauses: clauseDefinitions,
       finalAnswer,
-      formatterOptions: {
-        debugFlags: options.debugFlags,
-        showCallTree: options.showCallTree,
-      },
+      solutions,
+      formatterOptions,
     });
-    
+
     // Write output - default to source file location if not specified
     const outputPath = options.output || `${prologDir}/${nameWithoutExt}-output.md`;
     await writeOutput({
@@ -277,7 +285,35 @@ async function run(options: CLIOptions): Promise<void> {
       verbose: options.verbose,
       quiet: options.quiet,
     });
-    
+
+    // --split: one file per solution, each a self-contained single-solution
+    // trace of that solution's segment of the derivation.
+    if (options.split && solutions.length > 0) {
+      for (const sol of solutions) {
+        const solTimeline = timeline.filter(s => s.solutionIndex === sol.index);
+        const solAnswer = sol.bindings.length
+          ? sol.bindings.map(b => `${b.variable} = ${b.value}`).join(', ')
+          : undefined;
+        const solMarkdown = generateMarkdown({
+          query: options.query,
+          originalQuery: options.query,
+          timeline: solTimeline,
+          tree,
+          clauses: clauseDefinitions,
+          finalAnswer: solAnswer,
+          solutions: [sol], // length 1 -> single-solution layout
+          singleSolutionLabel: `Solution ${sol.index} of ${solutions.length}`,
+          formatterOptions,
+        });
+        await writeOutput({
+          content: solMarkdown,
+          outputPath: `${prologDir}/${nameWithoutExt}-soln${sol.index}.md`,
+          verbose: options.verbose,
+          quiet: options.quiet,
+        });
+      }
+    }
+
     logInfo('Done!', options);
   } finally {
     // Cleanup

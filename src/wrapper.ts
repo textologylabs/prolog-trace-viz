@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { extractQueryVariables } from './query.js';
 
 export interface WrapperConfig {
   prologContent: string;
@@ -9,6 +10,8 @@ export interface WrapperConfig {
   tracerPath: string;
   /** Absolute path for the trace.json output. Defaults to 'trace.json' (cwd-relative). */
   tracePath?: string;
+  /** How many solutions to enumerate (default 1). */
+  solutions?: number;
 }
 
 export interface TempFile {
@@ -28,10 +31,20 @@ export interface TempFile {
 export function generateWrapper(config: WrapperConfig): string {
   const { prologContent, query, depth, tracerPath, tracePath } = config;
   const maxDepth = depth || 100; // Default to 100 if not specified
+  const solutions = Math.max(1, config.solutions ?? 1);
   // Strip trailing '.' from the query - it's a clause terminator that breaks
   // when the query is inlined as a sub-goal of run_trace.
   const cleanQuery = query.trim().replace(/\.\s*$/, '');
   const traceOutPath = (tracePath || 'trace.json').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  // Enumerate up to N solutions under trace. findnsols/4 backtracks through the
+  // query collecting up to N solutions, so the trace captures the inter-solution
+  // backtracking, then stops. record_solution/1 injects a boundary marker with
+  // the query variables' bindings at each solution.
+  const queryVars = extractQueryVariables(cleanQuery);
+  const varList = `[${queryVars.map(v => `'${v}'=${v}`).join(', ')}]`;
+  const tracedGoal =
+    `findnsols(${solutions}, _, (${cleanQuery}, record_solution(${varList})), _)`;
   
   const lines: string[] = [
     `% Load custom tracer`,
@@ -50,7 +63,7 @@ export function generateWrapper(config: WrapperConfig): string {
   lines.push('run_trace :-');
   lines.push(`    install_tracer(${maxDepth}),`);
   lines.push('    catch(');
-  lines.push(`        (${cleanQuery}, export_trace_json('${traceOutPath}')),`);
+  lines.push(`        (${tracedGoal}, export_trace_json('${traceOutPath}')),`);
   lines.push('        Error,');
   lines.push(`        (format('Error: ~w~n', [Error]), export_trace_json('${traceOutPath}'))`);
   lines.push('    ),');
@@ -127,8 +140,9 @@ export function parseWrapper(content: string): WrapperConfig | null {
   }
   const tracerPath = tracerMatch[1];
   
-  // Extract query from run_trace predicate - match everything between ( and , export_trace_json
-  const queryMatch = content.match(/catch\(\s*\(([\s\S]*?),\s*export_trace_json/);
+  // Extract the query from the findnsols enumeration goal:
+  //   findnsols(N, _, (QUERY, record_solution([...])), _)
+  const queryMatch = content.match(/findnsols\([^,]+,\s*_,\s*\(([\s\S]*?),\s*record_solution\(/);
   if (!queryMatch) {
     return null;
   }

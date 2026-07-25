@@ -66,6 +66,8 @@ is_tracer_goal(Goal) :-
 
 tracer_predicate(trace_event).
 tracer_predicate(call_goal).
+tracer_predicate(record_solution).
+tracer_predicate(findnsols).
 tracer_predicate(assertz).
 tracer_predicate(retract).
 tracer_predicate(retractall).
@@ -74,6 +76,13 @@ tracer_predicate(format).
 tracer_predicate(write).
 tracer_predicate(open).
 tracer_predicate(close).
+
+%% record_solution(+Bindings)
+%  Inject a solution-boundary marker into the trace stream. Called once per
+%  solution during findnsols/4 enumeration; Bindings is a list of Name=Value
+%  for the query's variables, captured at the moment the solution is found.
+record_solution(Bindings) :-
+    assertz(trace_event(solution(Bindings))).
 
 %% handle_trace_error(+Error, +Port, +Frame)
 %  Handle errors during trace event capture
@@ -192,6 +201,11 @@ write_events_list(Stream, [Event|Rest]) :-
 write_json_event_or_marker(Stream, truncated(MaxDepth)) :-
     !,
     format(Stream, '{"truncated": true, "max_depth": ~w}', [MaxDepth]).
+write_json_event_or_marker(Stream, solution(Bindings)) :-
+    !,
+    format(Stream, '{"solution": true, "bindings": ', []),
+    write_json_term(Stream, Bindings),
+    format(Stream, '}', []).
 write_json_event_or_marker(Stream, Event) :-
     write_json_event(Stream, Event).
 

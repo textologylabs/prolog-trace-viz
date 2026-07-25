@@ -213,4 +213,47 @@ describe('CLI Integration Tests', () => {
       expect(content).toContain('graph TD');
     });
   });
+
+  describe('multiple solutions', () => {
+    const tempOutput = '/tmp/ptv-test-multi.md';
+    const splitFiles = ['examples/append-soln1.md', 'examples/append-soln2.md',
+                        'examples/append-soln3.md', 'examples/append-soln4.md'];
+
+    afterEach(() => {
+      for (const f of [tempOutput, ...splitFiles]) {
+        if (fs.existsSync(f)) fs.unlinkSync(f);
+      }
+    });
+
+    it('-n enumerates several solutions with a summary table', () => {
+      const result = runCLI(`examples/append.pl "append(A, B, [1,2,3])" -n 4 -o ${tempOutput}`);
+      expect(result.exitCode).toBe(0);
+
+      const content = fs.readFileSync(tempOutput, 'utf-8');
+      expect(content).toContain('## Solutions (4)');
+      expect(content).toContain('`A = []`');
+      expect(content).toContain('`A = [1,2,3]`');
+      expect(content).toContain('Solution 1');
+      expect(content).toContain('_Showing 4 solutions._');
+    });
+
+    it('default run is still single-solution', () => {
+      const result = runCLI(`examples/append.pl "append(A, B, [1,2,3])" -o ${tempOutput}`);
+      expect(result.exitCode).toBe(0);
+
+      const content = fs.readFileSync(tempOutput, 'utf-8');
+      expect(content).not.toContain('## Solutions (');
+      expect(content).toContain('_Showing first solution only._');
+    });
+
+    it('--split writes one file per solution', () => {
+      const result = runCLI(`examples/append.pl "append(A, B, [1,2,3])" -n 4 --split -o ${tempOutput}`);
+      expect(result.exitCode).toBe(0);
+
+      expect(fs.existsSync('examples/append-soln1.md')).toBe(true);
+      expect(fs.existsSync('examples/append-soln4.md')).toBe(true);
+      const soln4 = fs.readFileSync('examples/append-soln4.md', 'utf-8');
+      expect(soln4).toContain('_Solution 4 of 4._');
+    });
+  });
 });
