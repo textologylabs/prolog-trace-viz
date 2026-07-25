@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-07-25
+
 ### Added
 - **Multiple-solution tracing.** `-n, --solutions <n>` traces up to *n* solutions (default 1); `--all` traces every solution, capped at 10. Enumeration is one continuous trace — Prolog backtracks from one solution into the next (via `findnsols/4`), so the inter-solution backtracking is captured, not faked by re-running. The output gains a **Solutions** summary table, `──── Solution N ────` dividers in the timeline, and a **forest** call tree: one `✓` leaf per solution, joined by `next solution` edges. `--split` additionally writes a self-contained file per solution (`<source>-soln1.md`, `-soln2.md`, …). The default (one solution, single file) is unchanged.
 
