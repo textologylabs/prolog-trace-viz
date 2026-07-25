@@ -1,6 +1,6 @@
 {
   "name": "prolog-trace-viz",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "description": "Generate enhanced visual trace diagrams for Prolog query execution",
   "type": "module",
   "main": "dist/index.js",

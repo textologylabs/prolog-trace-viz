@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-07-25
+
 ### Changed
 - **`--tree` now reads as an execution flow with backtracking loops.** The call tree previously fanned every goal off the query root and drew an unlabelled edge from a retry to the goal it re-entered. It now chains goals in the order they run, shows each goal with the bindings it was actually called with (`likes(john, food)`, not `likes(john, X)`), and draws backtracking as a labelled loop: a dotted `backtrack to Ⓝ` edge from the dead end back to the choice point, then a thick `retry` edge on to the re-solution. Failures render as `Ⓝ ✗ fail`, and the diagram ends on a `✓` node carrying the answer. Node numbers still match the timeline's step numbers.
 
