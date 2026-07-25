@@ -90,33 +90,35 @@ factorial(3, X)
 graph TD
 
 %% Nodes
-A["① factorial(N, R)<br/>clause 5<br/>Result: R=6"]
-B["② 3>0"]
-C["③ 2 is 3+ -1"]
-D["④ factorial(N, R)<br/>clause 5<br/>Result: R=2"]
-E["⑤ 2>0"]
-F["⑥ 1 is 2+ -1"]
-G["⑦ factorial(N, R)<br/>clause 5<br/>Result: R=1"]
-H["⑧ 1>0"]
-I["⑨ 0 is 1+ -1"]
-J["⑩ factorial(0, 1)<br/>clause 4<br/>Result: _1280=1"]
-K["⑪ 1 is 1*1"]
-L["⑫ 2 is 2*1"]
-M["⑬ 6 is 3*2"]
+A["?- factorial(3, X)"]
+B["① factorial(3, X)<br/>clause 5<br/>X = 6"]
+C["② N &gt; 0"]
+D["③ N1 is N - 1"]
+E["④ factorial(N1, R1)<br/>clause 5<br/>R1 = 2"]
+F["⑤ N &gt; 0"]
+G["⑥ N1 is N - 1"]
+H["⑦ factorial(N1, R1)<br/>clause 5<br/>R1 = 1"]
+I["⑧ N &gt; 0"]
+J["⑨ N1 is N - 1"]
+K["⑩ factorial(N1, R1)<br/>fact 4<br/>R1 = 1"]
+L["⑪ R is N * R1"]
+M["⑫ R is N * R1"]
+N["⑬ R is N * R1"]
 
 %% Edges
-A -->|"N > 0"| B
-A -->|"N1 is N - 1"| C
-A -->|"factorial(N1, R1)"| D
-D -->|"N > 0"| E
-D -->|"N1 is N - 1"| F
-D -->|"factorial(N1, R1)"| G
-G -->|"N > 0"| H
-G -->|"N1 is N - 1"| I
-G -->|"factorial(N1, R1)"| J
-G -->|"R is N * R1"| K
-D -->|"R is N * R1"| L
-A -->|"R is N * R1"| M
+A --> B
+B -->|"[1.1]"| C
+B -->|"[1.2]"| D
+B -->|"[1.3]"| E
+E -->|"[4.1]"| F
+E -->|"[4.2]"| G
+E -->|"[4.3]"| H
+H -->|"[7.1]"| I
+H -->|"[7.2]"| J
+H -->|"[7.3]"| K
+H -->|"[7.4]"| L
+E -->|"[4.4]"| M
+B -->|"[1.4]"| N
 
 %% Styles
 style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
@@ -132,6 +134,7 @@ style J fill:#c8e6c9,stroke:#388e3c
 style K fill:#c8e6c9,stroke:#388e3c
 style L fill:#c8e6c9,stroke:#388e3c
 style M fill:#c8e6c9,stroke:#388e3c
+style N fill:#c8e6c9,stroke:#388e3c
 ```
 
 ## Final Answer

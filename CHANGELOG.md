@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Result lines assumed the output was the last argument**: `member(X, [a,b,c])` reported `[a,b,c] = [a,b,c]` and a fact match reported `wine = wine`. Results are now derived by comparing the `CALL` goal with the `EXIT` goal — the arguments the caller left open and execution filled in — so `member` reports `X = a`, and a goal that bound nothing emits no result line at all.
 - **Final answer for a conjunctive query**: `?- likes(mary, X), likes(john, X).` answered `X) = food` — a greedy regex mis-split the query, and the answer was read from the call tree's root, which only ever sees the first conjunct. The answer is now read from the query variables' bindings across all top-level goals, with the last solution winning.
 
+- **`--tree` produced a broken diagram for conjunctions**: The Mermaid call tree was built by a separate, level-keyed tree builder that could not represent the goals of a conjunction (which share a trace level) — `?- likes(mary, X), likes(john, X).` rendered as a single orphan node labelled with the raw internal variable and the *rejected* binding. The call tree is now rendered from the same execution timeline as the rest of the output, so it inherits conjunction siblings, retries drawn as branches, failed attempts shown in place, and query-named goals. Retries get a dotted `backtrack` edge to the solution they re-enter, and node numbers match the timeline's step numbers.
+
 ### Changed
 - The `Query Variable:` line is no longer printed where the `=>` line above it already states the same binding in the same names. It remains for steps whose bindings cannot be derived exactly.
 

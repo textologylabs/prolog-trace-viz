@@ -51,18 +51,21 @@ append([1,2], [3,4], X)
 graph TD
 
 %% Nodes
-A["① append([H|T], L, [H|R])<br/>clause 5<br/>Result: [H|R]=[1,2,3,4]"]
-B["② append([H|T], L, [H|R])<br/>clause 5<br/>Result: [H|R]=[2,3,4]"]
-C["③ append([], L, L)<br/>clause 4<br/>Result: L=[3,4]"]
+A["?- append([1,2], [3,4], X)"]
+B["① append([1,2], [3,4], X)<br/>clause 5<br/>X = [1,2,3,4]"]
+C["② append(T, L, R)<br/>clause 5<br/>R = [2,3,4]"]
+D["③ append(T, L, R)<br/>fact 4<br/>R = [3,4]"]
 
 %% Edges
-A -->|"append(T, L, R)"| B
-B -->|"append(T, L, R)"| C
+A --> B
+B -->|"[1.1]"| C
+C -->|"[2.1]"| D
 
 %% Styles
 style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
 style B fill:#c8e6c9,stroke:#388e3c
 style C fill:#c8e6c9,stroke:#388e3c
+style D fill:#c8e6c9,stroke:#388e3c
 ```
 
 ## Final Answer

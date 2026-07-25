@@ -6,6 +6,7 @@
  */
 
 import { TreeNode } from './tree.js';
+import { TimelineStep } from './timeline.js';
 import { DebugFlag } from './cli.js';
 
 export interface TreeFormatterOptions {
@@ -53,6 +54,138 @@ export function formatTreeAsMermaid(root: TreeNode | null, options: TreeFormatte
   lines.push(...styles);
   
   return lines.join('\n');
+}
+
+/**
+ * Format the execution timeline as a Mermaid call/derivation tree.
+ *
+ * Unlike the legacy tree builder, this walks the timeline the rest of ptv
+ * already uses, so it inherits everything the timeline gets right: conjunction
+ * siblings (which share a trace level and defeat a level-keyed tree), retries
+ * shown as branches, failed attempts drawn in place, and goals named after the
+ * user's query rather than whatever clause they happened to match.
+ *
+ * The shape is the timeline's own nesting under a synthetic query root, with a
+ * dotted "backtrack" edge from each retry to the step it re-enters.
+ */
+export function formatTimelineAsMermaid(
+  steps: TimelineStep[],
+  query: string,
+  options: TreeFormatterOptions = {}
+): string {
+  const lines: string[] = ['graph TD', ''];
+
+  if (steps.length === 0) {
+    lines.push('%% Nodes', `A["${escapeLabel('?- ' + query)}"]`);
+    return lines.join('\n');
+  }
+
+  const nodes: string[] = [];
+  const edges: string[] = [];
+  const backEdges: string[] = [];
+  const styles: string[] = [];
+
+  let counter = 0;
+  const nextId = (): string => generateMermaidId(counter++);
+
+  // step number -> node id, so retries can point back at their origin
+  const idOfStep = new Map<number, string>();
+
+  const rootId = nextId();
+  nodes.push(`${rootId}["${escapeLabel('?- ' + query)}"]`);
+  styles.push(`style ${rootId} fill:#e1f5ff,stroke:#01579b,stroke-width:3px`);
+
+  const walk = (list: TimelineStep[], parentId: string): void => {
+    for (const step of list) {
+      const id = nextId();
+      idOfStep.set(step.stepNumber, id);
+
+      nodes.push(`${id}[${formatStepLabel(step)}]`);
+      styles.push(`style ${id} ${styleForStep(step)}`);
+
+      const edgeLabel = step.subgoalLabel
+        ? `|"${escapeLabel(step.subgoalLabel)}"|`
+        : '';
+      edges.push(`${parentId} -->${edgeLabel} ${id}`);
+
+      // Show backtracking as a dotted edge back to the solution being retried.
+      if (step.isRetry && step.retryOfStep !== undefined) {
+        const originId = idOfStep.get(step.retryOfStep);
+        if (originId) {
+          backEdges.push(`${id} -.->|"backtrack"| ${originId}`);
+        }
+      }
+
+      walk(step.children, id);
+    }
+  };
+
+  walk(steps, rootId);
+
+  lines.push('%% Nodes', ...nodes, '');
+  lines.push('%% Edges', ...edges, ...backEdges, '');
+  lines.push('%% Styles', ...styles);
+
+  return lines.join('\n');
+}
+
+/**
+ * Build a node label for a timeline step: a circled step number matching the
+ * timeline, a REDO/FAIL prefix where relevant, the goal in the user's names,
+ * the clause line, and what the step bound.
+ */
+function formatStepLabel(step: TimelineStep): string {
+  const parts: string[] = [];
+
+  const prefix = step.port === 'fail' ? 'FAIL ' : step.isRetry ? 'REDO ' : '';
+  const goal = step.subgoalTemplate ?? step.goal;
+  parts.push(`${toCircledNumber(step.stepNumber)} ${prefix}${escapeLabel(goal)}`);
+
+  if (step.port !== 'fail' && step.clause) {
+    const kind = step.clause.body && step.clause.body !== 'true' ? 'clause' : 'fact';
+    parts.push(`${kind} ${step.clause.line}`);
+  }
+
+  if (step.resultBindings && step.resultBindings.length > 0) {
+    const bound = step.resultBindings.map(b => `${b.variable} = ${escapeLabel(b.value)}`).join(', ');
+    parts.push(bound);
+  }
+
+  // Parts are joined with a literal <br/> line break, so escape their content
+  // above rather than the whole string here.
+  return `"${parts.join('<br/>')}"`;
+}
+
+/**
+ * Mermaid node style for a timeline step: green for a goal that succeeded, red
+ * for a failure, yellow for one still open (a bare CALL with no EXIT).
+ */
+function styleForStep(step: TimelineStep): string {
+  if (step.port === 'fail') return 'fill:#ffcdd2,stroke:#c62828';
+  if (step.port === 'merged') return 'fill:#c8e6c9,stroke:#388e3c';
+  return 'fill:#fff9c4,stroke:#f57f17';
+}
+
+/**
+ * Escape the few characters that break a quoted Mermaid label.
+ */
+function escapeLabel(text: string): string {
+  return text
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * Generate a Mermaid-safe node id (A-Z, AA-AZ, ...) from a running index.
+ */
+function generateMermaidId(index: number): string {
+  if (index < 26) {
+    return String.fromCharCode(65 + index);
+  }
+  const first = String.fromCharCode(65 + Math.floor(index / 26) - 1);
+  const second = String.fromCharCode(65 + (index % 26));
+  return first + second;
 }
 
 /**

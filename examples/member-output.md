@@ -30,12 +30,15 @@ member(X, [a,b,c])
 graph TD
 
 %% Nodes
-A["① member(X, [X|_])<br/>clause 4<br/>Result: [X|_]=a"]
+A["?- member(X, [a,b,c])"]
+B["① member(X, [a,b,c])<br/>fact 4<br/>X = a"]
 
 %% Edges
+A --> B
 
 %% Styles
 style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
+style B fill:#c8e6c9,stroke:#388e3c
 ```
 
 ## Final Answer

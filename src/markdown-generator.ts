@@ -5,7 +5,7 @@
 import { TimelineStep } from './timeline.js';
 import { TreeNode } from './tree.js';
 import { formatTimeline, TimelineFormatterOptions } from './timeline-formatter.js';
-import { formatTreeAsMermaid, TreeFormatterOptions } from './tree-formatter.js';
+import { formatTimelineAsMermaid, TreeFormatterOptions } from './tree-formatter.js';
 
 import { DebugFlag } from './cli.js';
 
@@ -141,23 +141,24 @@ function generateTimelineSection(context: MarkdownContext): string {
  */
 function generateTreeSection(context: MarkdownContext): string {
   const lines: string[] = [];
-  
+
   lines.push('## Call Tree');
   lines.push('');
-  
-  if (!context.tree) {
+
+  if (context.timeline.length === 0) {
     lines.push('_No call tree available._');
     return lines.join('\n');
   }
-  
+
   const formatterOptions: TreeFormatterOptions = {
     debugFlags: context.formatterOptions?.debugFlags ?? new Set(),
   };
-  
+
+  const query = context.originalQuery || context.query;
   lines.push('```mermaid');
-  lines.push(formatTreeAsMermaid(context.tree, formatterOptions));
+  lines.push(formatTimelineAsMermaid(context.timeline, query, formatterOptions));
   lines.push('```');
-  
+
   return lines.join('\n');
 }
 

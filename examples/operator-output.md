@@ -30,12 +30,15 @@ t(1+0+1, C)
 graph TD
 
 %% Nodes
-A["① t(X+0+1, X+1+0)<br/>clause 2<br/>Result: X+1+0=1+1+0"]
+A["?- t(1+0+1, C)"]
+B["① t(1+0+1, C)<br/>fact 2<br/>C = 1+1+0"]
 
 %% Edges
+A --> B
 
 %% Styles
 style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
+style B fill:#c8e6c9,stroke:#388e3c
 ```
 
 ## Final Answer

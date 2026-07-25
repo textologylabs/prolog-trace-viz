@@ -49,18 +49,21 @@ t(0+1+1, B)
 graph TD
 
 %% Nodes
-A["① t(X+1+1, Z)<br/>clause 28<br/>Result: Z=1+1+0"]
-B["② t(0+1, 1+0)<br/>clause 26<br/>Result: 1+0=1+0"]
-C["③ t(X+0+1, X+1+0)<br/>clause 27<br/>Result: X+1+0=1+1+0"]
+A["?- t(0+1+1, B)"]
+B["① t(0+1+1, B)<br/>clause 28<br/>B = 1+1+0"]
+C["② t(X+1, X1)<br/>fact 26<br/>X1 = 1+0"]
+D["③ t(X1+1, Z)<br/>fact 27<br/>Z = 1+1+0"]
 
 %% Edges
-A -->|"t(X+1, X1)"| B
-A -->|"t(X1+1, Z)"| C
+A --> B
+B -->|"[1.1]"| C
+B -->|"[1.2]"| D
 
 %% Styles
 style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
 style B fill:#c8e6c9,stroke:#388e3c
 style C fill:#c8e6c9,stroke:#388e3c
+style D fill:#c8e6c9,stroke:#388e3c
 ```
 
 ## Final Answer
