@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-07-25
+
 ### Fixed
 - **Backtrack edge could point from the wrong node in nested backtracking.** In a cascade — one failure re-entering an ancestor goal *and* an inner goal — the renderer guessed the dead end as "the step just before the retry", which for the inner re-entry was the *other retry*, not the failure. The builder now records the actual failure that triggered each retry, so every `backtrack to Ⓝ` edge springs from the real dead end (e.g. both re-entries in `member(X, [1,2,3]), X > 2` now originate at the one `✗ fail`).
 
