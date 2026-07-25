@@ -108,9 +108,15 @@ describe('Wrapper Generator - Property Tests', () => {
           // Verify error handling
           expect(wrapper).toContain('catch(');
           
-          // Verify query is included
-          expect(wrapper).toContain(query.trim());
-          
+          // Verify query is included. generateWrapper strips a single trailing
+          // clause terminator ('.') before inlining, so assert against the same
+          // cleaned form rather than the raw query (which was flaky whenever the
+          // generated query happened to end in a dot).
+          const cleanQuery = query.trim().replace(/\.\s*$/, '');
+          if (cleanQuery.length > 0) {
+            expect(wrapper).toContain(cleanQuery);
+          }
+
           // Verify execution directives
           expect(wrapper).toContain(':- run_trace.');
           expect(wrapper).toContain(':- halt.');
