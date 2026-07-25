@@ -37,6 +37,7 @@ export interface TimelineStep {
   queryVarState?: string;   // State of the query variable at this step
   isRetry?: boolean;        // REDO: this step re-enters a goal that already succeeded
   retryOfStep?: number;     // For retry steps: the step number of the solution being re-entered
+  backtrackFromStep?: number; // For retry steps: the failure that triggered the backtracking
   retryRejected?: Array<{ variable: string; value: string }>; // The bindings backtracking undid
   children: TimelineStep[]; // Nested child steps
 }
@@ -90,6 +91,10 @@ export class TimelineBuilder {
   private exitedByLevel: Map<number, TimelineStep[]> = new Map();
   // retry step -> the earlier step whose choice point it re-enters
   private retryOrigin: Map<TimelineStep, TimelineStep> = new Map();
+  // The most recent failure, and each retry -> the failure that triggered it.
+  // A whole cascade of re-entries springs from one failure, so they share it.
+  private lastFailStep: TimelineStep | undefined;
+  private retryTrigger: Map<TimelineStep, TimelineStep> = new Map();
   // Top-level goals of the query, in the user's own variable names
   private queryConjuncts: string[] = [];
   // step -> the step it is nested in (undefined for top-level goals)
@@ -395,6 +400,9 @@ export class TimelineBuilder {
     };
 
     this.retryOrigin.set(step, origin);
+    if (this.lastFailStep) {
+      this.retryTrigger.set(step, this.lastFailStep);
+    }
     this.stepMap.set(step.stepNumber, step);
     this.callStack.set(origin.level, step.stepNumber);
 
@@ -479,6 +487,10 @@ export class TimelineBuilder {
       this.steps.push(step);
     }
 
+    // Prolog backtracks on the most recent failure, so remember it as the
+    // trigger for whatever REDO comes next.
+    this.lastFailStep = step;
+
     this.activeCallStack.pop();
     this.callStack.delete(event.level);
   }
@@ -507,6 +519,12 @@ export class TimelineBuilder {
         if (origin) {
           // The origin is an earlier sibling, so it is already renumbered.
           step.retryOfStep = origin.stepNumber;
+          // The triggering failure is earlier in execution order, so it too is
+          // already numbered by the time we reach this retry.
+          const trigger = this.retryTrigger.get(step);
+          if (trigger) {
+            step.backtrackFromStep = trigger.stepNumber;
+          }
           slot = this.subgoalSlots.get(origin);
           if (slot !== undefined) {
             nextSlot = slot + 1;

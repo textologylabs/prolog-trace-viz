@@ -541,6 +541,23 @@ describe('Backtracking - REDO through a nested choice point', () => {
     expect(outerRetry.exitGoal).toBe('member(2,[1,2])');
     expect(outerRetry.resultBindings).toEqual([{ variable: 'X', value: '2' }]);
   });
+
+  it('traces every retry in the cascade back to the failure that triggered it', () => {
+    const timeline = flattenTimeline(
+      new TimelineBuilder(events, undefined, 'member(X, [1,2]), X > 1').build()
+    );
+
+    // The one failure that set backtracking off is 1 > 1.
+    const failStep = timeline.find(s => s.port === 'fail' && s.goal === '1>1')!;
+    const retries = timeline.filter(s => s.isRetry);
+
+    expect(retries.length).toBeGreaterThanOrEqual(2);
+    // Both the outer re-entry and the inner one point at the real dead end,
+    // not at each other (the old stepNumber-1 heuristic pointed one at the other).
+    for (const retry of retries) {
+      expect(retry.backtrackFromStep).toBe(failStep.stepNumber);
+    }
+  });
 });
 
 describe('Nested timeline structure', () => {

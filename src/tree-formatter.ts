@@ -119,9 +119,12 @@ export function formatTimelineAsMermaid(
         : undefined;
 
       if (origin) {
-        // Backtracking: the previous step in execution order is the dead end;
-        // control returns to the choice point, which then yields this retry.
-        const deadEnd = idOfStep.get(step.stepNumber - 1) ?? prevId ?? parentId;
+        // Backtracking: control returns from the failure that triggered it to
+        // the choice point, which then yields this retry. The builder records
+        // the actual trigger; fall back to the preceding step only if it didn't.
+        const deadEnd =
+          (step.backtrackFromStep !== undefined ? idOfStep.get(step.backtrackFromStep) : undefined)
+          ?? idOfStep.get(step.stepNumber - 1) ?? prevId ?? parentId;
         edges.push(`${deadEnd} -.->|"backtrack to ${toCircledNumber(step.retryOfStep!)}"| ${origin}`);
         edges.push(`${origin} ==>|"retry"| ${id}`);
       } else {
