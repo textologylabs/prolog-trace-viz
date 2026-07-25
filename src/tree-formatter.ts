@@ -56,114 +56,152 @@ export function formatTreeAsMermaid(root: TreeNode | null, options: TreeFormatte
   return lines.join('\n');
 }
 
+/** Node styles, keyed by role. `color` keeps labels legible on the fills in dark viewers. */
+const NODE_STYLE = {
+  query: 'fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#0b2440',
+  success: 'fill:#c8e6c9,stroke:#388e3c,color:#14361a',
+  fail: 'fill:#ffcdd2,stroke:#c62828,stroke-width:2px,color:#4a1414',
+  pending: 'fill:#fff9c4,stroke:#f57f17,color:#4a3208',
+  answer: 'fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#14361a',
+} as const;
+
+const MERMAID_INIT =
+  "%%{init: {'flowchart': {'nodeSpacing': 46, 'rankSpacing': 50}, 'themeVariables': {'fontSize': '15px'}}}%%";
+
 /**
- * Format the execution timeline as a Mermaid call/derivation tree.
+ * Format the execution timeline as a Mermaid derivation diagram.
  *
- * Unlike the legacy tree builder, this walks the timeline the rest of ptv
- * already uses, so it inherits everything the timeline gets right: conjunction
- * siblings (which share a trace level and defeat a level-keyed tree), retries
- * shown as branches, failed attempts drawn in place, and goals named after the
- * user's query rather than whatever clause they happened to match.
- *
- * The shape is the timeline's own nesting under a synthetic query root, with a
- * dotted "backtrack" edge from each retry to the step it re-enters.
+ * Reads as the actual execution flow rather than a static call tree: goals are
+ * chained in the order they run, and backtracking shows up as a loop — a dotted
+ * "backtrack to Ⓝ" edge from the dead end back to the choice point, then a thick
+ * "retry" edge on to the re-solution. It inherits everything the timeline gets
+ * right (query-named goals, real results, conjunction siblings, nested retries),
+ * and ends on a ✓ node carrying the answer.
  */
 export function formatTimelineAsMermaid(
   steps: TimelineStep[],
   query: string,
+  finalAnswer?: string,
   options: TreeFormatterOptions = {}
 ): string {
-  const lines: string[] = ['graph TD', ''];
-
   if (steps.length === 0) {
-    lines.push('%% Nodes', `A["${escapeLabel('?- ' + query)}"]`);
-    return lines.join('\n');
+    return [MERMAID_INIT, 'graph TD', '', '%% Nodes', `A["${escapeLabel('?- ' + query)}"]`].join('\n');
   }
 
   const nodes: string[] = [];
   const edges: string[] = [];
-  const backEdges: string[] = [];
   const styles: string[] = [];
 
   let counter = 0;
   const nextId = (): string => generateMermaidId(counter++);
 
-  // step number -> node id, so retries can point back at their origin
+  // step number -> node id. Origins are always numbered before the retry that
+  // re-enters them, so a single depth-first pass sees them in time.
   const idOfStep = new Map<number, string>();
 
   const rootId = nextId();
   nodes.push(`${rootId}["${escapeLabel('?- ' + query)}"]`);
-  styles.push(`style ${rootId} fill:#e1f5ff,stroke:#01579b,stroke-width:3px`);
+  styles.push(`style ${rootId} ${NODE_STYLE.query}`);
 
-  const walk = (list: TimelineStep[], parentId: string): void => {
+  // Walk a sibling list, chaining them in execution order and nesting each
+  // one's own subtree beneath it. Returns the last sibling's id (the point the
+  // flow continues from).
+  const walk = (list: TimelineStep[], parentId: string): string | null => {
+    let prevId: string | null = null;
     for (const step of list) {
       const id = nextId();
       idOfStep.set(step.stepNumber, id);
-
-      nodes.push(`${id}[${formatStepLabel(step)}]`);
+      nodes.push(`${id}[${labelForStep(step)}]`);
       styles.push(`style ${id} ${styleForStep(step)}`);
 
-      const edgeLabel = step.subgoalLabel
-        ? `|"${escapeLabel(step.subgoalLabel)}"|`
-        : '';
-      edges.push(`${parentId} -->${edgeLabel} ${id}`);
+      const origin = step.isRetry && step.retryOfStep !== undefined
+        ? idOfStep.get(step.retryOfStep)
+        : undefined;
 
-      // Show backtracking as a dotted edge back to the solution being retried.
-      if (step.isRetry && step.retryOfStep !== undefined) {
-        const originId = idOfStep.get(step.retryOfStep);
-        if (originId) {
-          backEdges.push(`${id} -.->|"backtrack"| ${originId}`);
-        }
+      if (origin) {
+        // Backtracking: the previous step in execution order is the dead end;
+        // control returns to the choice point, which then yields this retry.
+        const deadEnd = idOfStep.get(step.stepNumber - 1) ?? prevId ?? parentId;
+        edges.push(`${deadEnd} -.->|"backtrack to ${toCircledNumber(step.retryOfStep!)}"| ${origin}`);
+        edges.push(`${origin} ==>|"retry"| ${id}`);
+      } else {
+        edges.push(`${prevId ?? parentId} --> ${id}`);
       }
 
       walk(step.children, id);
+      prevId = id;
     }
+    return prevId;
   };
 
-  walk(steps, rootId);
+  const lastId = walk(steps, rootId);
 
-  lines.push('%% Nodes', ...nodes, '');
-  lines.push('%% Edges', ...edges, ...backEdges, '');
-  lines.push('%% Styles', ...styles);
+  // Terminal ✓ node carrying the answer, off the last goal in the flow.
+  if (finalAnswer && lastId) {
+    const termId = nextId();
+    nodes.push(`${termId}["${escapeLabel('✓ ' + finalAnswer)}"]`);
+    styles.push(`style ${termId} ${NODE_STYLE.answer}`);
+    edges.push(`${lastId} --> ${termId}`);
+  }
 
-  return lines.join('\n');
+  return [
+    MERMAID_INIT, 'graph TD', '',
+    '%% Nodes', ...nodes, '',
+    '%% Flow', ...edges, '',
+    '%% Styles', ...styles,
+  ].join('\n');
 }
 
 /**
- * Build a node label for a timeline step: a circled step number matching the
- * timeline, a REDO/FAIL prefix where relevant, the goal in the user's names,
- * the clause line, and what the step bound.
+ * Node label: circled step number (matching the timeline), the goal in the
+ * caller's variable names with earlier bindings substituted in, the clause line,
+ * and what the step bound. A failure is just "Ⓝ ✗ fail" — the goal it tried is
+ * on the call node above it.
  */
-function formatStepLabel(step: TimelineStep): string {
-  const parts: string[] = [];
-
-  const prefix = step.port === 'fail' ? 'FAIL ' : step.isRetry ? 'REDO ' : '';
-  const goal = step.subgoalTemplate ?? step.goal;
-  parts.push(`${toCircledNumber(step.stepNumber)} ${prefix}${escapeLabel(goal)}`);
-
-  if (step.port !== 'fail' && step.clause) {
-    const kind = step.clause.body && step.clause.body !== 'true' ? 'clause' : 'fact';
-    parts.push(`${kind} ${step.clause.line}`);
+function labelForStep(step: TimelineStep): string {
+  if (step.port === 'fail') {
+    return `"${toCircledNumber(step.stepNumber)} ✗ fail"`;
   }
+
+  const parts: string[] = [`${toCircledNumber(step.stepNumber)} ${escapeLabel(displayGoal(step))}`];
+
+  const clauseRef = step.clause
+    ? `${step.clause.body && step.clause.body !== 'true' ? 'clause' : 'fact'} ${step.clause.line}`
+    : '';
 
   if (step.resultBindings && step.resultBindings.length > 0) {
     const bound = step.resultBindings.map(b => `${b.variable} = ${escapeLabel(b.value)}`).join(', ');
-    parts.push(bound);
+    parts.push(clauseRef ? `${bound} · ${clauseRef}` : bound);
+  } else if (clauseRef) {
+    parts.push(clauseRef);
   }
 
-  // Parts are joined with a literal <br/> line break, so escape their content
-  // above rather than the whole string here.
   return `"${parts.join('<br/>')}"`;
 }
 
 /**
- * Mermaid node style for a timeline step: green for a goal that succeeded, red
- * for a failure, yellow for one still open (a bare CALL with no EXIT).
+ * The goal as it was actually run: the caller's template (query conjunct or
+ * clause subgoal) with the bindings that reached it substituted in, so a call
+ * shows `likes(john, food)` rather than `likes(john, X)`.
+ */
+function displayGoal(step: TimelineStep): string {
+  let goal = step.subgoalTemplate ?? step.goal;
+  if (step.subgoalBindings) {
+    for (const { variable, value } of step.subgoalBindings) {
+      goal = goal.replace(new RegExp(`\\b${variable}\\b`, 'g'), value);
+    }
+  }
+  return goal;
+}
+
+/**
+ * Mermaid node style: green for a goal that succeeded, red for a failure, amber
+ * for one still open (a bare CALL that never got its own EXIT).
  */
 function styleForStep(step: TimelineStep): string {
-  if (step.port === 'fail') return 'fill:#ffcdd2,stroke:#c62828';
-  if (step.port === 'merged') return 'fill:#c8e6c9,stroke:#388e3c';
-  return 'fill:#fff9c4,stroke:#f57f17';
+  if (step.port === 'fail') return NODE_STYLE.fail;
+  if (step.port === 'merged') return NODE_STYLE.success;
+  return NODE_STYLE.pending;
 }
 
 /**

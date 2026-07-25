@@ -27,18 +27,22 @@ t(1+0+1, C)
 ## Call Tree
 
 ```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 46, 'rankSpacing': 50}, 'themeVariables': {'fontSize': '15px'}}}%%
 graph TD
 
 %% Nodes
 A["?- t(1+0+1, C)"]
-B["① t(1+0+1, C)<br/>fact 2<br/>C = 1+1+0"]
+B["① t(1+0+1, C)<br/>C = 1+1+0 · fact 2"]
+C["✓ C = 1+1+0"]
 
-%% Edges
+%% Flow
 A --> B
+B --> C
 
 %% Styles
-style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
-style B fill:#c8e6c9,stroke:#388e3c
+style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#0b2440
+style B fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style C fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#14361a
 ```
 
 ## Final Answer

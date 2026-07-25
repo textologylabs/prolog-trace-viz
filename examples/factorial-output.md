@@ -87,54 +87,58 @@ factorial(3, X)
 ## Call Tree
 
 ```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 46, 'rankSpacing': 50}, 'themeVariables': {'fontSize': '15px'}}}%%
 graph TD
 
 %% Nodes
 A["?- factorial(3, X)"]
-B["① factorial(3, X)<br/>clause 5<br/>X = 6"]
+B["① factorial(3, X)<br/>X = 6 · clause 5"]
 C["② N &gt; 0"]
 D["③ N1 is N - 1"]
-E["④ factorial(N1, R1)<br/>clause 5<br/>R1 = 2"]
+E["④ factorial(N1, R1)<br/>R1 = 2 · clause 5"]
 F["⑤ N &gt; 0"]
 G["⑥ N1 is N - 1"]
-H["⑦ factorial(N1, R1)<br/>clause 5<br/>R1 = 1"]
+H["⑦ factorial(N1, R1)<br/>R1 = 1 · clause 5"]
 I["⑧ N &gt; 0"]
 J["⑨ N1 is N - 1"]
-K["⑩ factorial(N1, R1)<br/>fact 4<br/>R1 = 1"]
-L["⑪ R is N * R1"]
-M["⑫ R is N * R1"]
-N["⑬ R is N * R1"]
+K["⑩ factorial(N1, R1)<br/>R1 = 1 · fact 4"]
+L["⑪ R is N * 1"]
+M["⑫ R is N * 1"]
+N["⑬ R is N * 2"]
+O["✓ X = 6"]
 
-%% Edges
+%% Flow
 A --> B
-B -->|"[1.1]"| C
-B -->|"[1.2]"| D
-B -->|"[1.3]"| E
-E -->|"[4.1]"| F
-E -->|"[4.2]"| G
-E -->|"[4.3]"| H
-H -->|"[7.1]"| I
-H -->|"[7.2]"| J
-H -->|"[7.3]"| K
-H -->|"[7.4]"| L
-E -->|"[4.4]"| M
-B -->|"[1.4]"| N
+B --> C
+C --> D
+D --> E
+E --> F
+F --> G
+G --> H
+H --> I
+I --> J
+J --> K
+K --> L
+H --> M
+E --> N
+B --> O
 
 %% Styles
-style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
-style B fill:#c8e6c9,stroke:#388e3c
-style C fill:#c8e6c9,stroke:#388e3c
-style D fill:#c8e6c9,stroke:#388e3c
-style E fill:#c8e6c9,stroke:#388e3c
-style F fill:#c8e6c9,stroke:#388e3c
-style G fill:#c8e6c9,stroke:#388e3c
-style H fill:#c8e6c9,stroke:#388e3c
-style I fill:#c8e6c9,stroke:#388e3c
-style J fill:#c8e6c9,stroke:#388e3c
-style K fill:#c8e6c9,stroke:#388e3c
-style L fill:#c8e6c9,stroke:#388e3c
-style M fill:#c8e6c9,stroke:#388e3c
-style N fill:#c8e6c9,stroke:#388e3c
+style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#0b2440
+style B fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style C fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style D fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style E fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style F fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style G fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style H fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style I fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style J fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style K fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style L fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style M fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style N fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style O fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#14361a
 ```
 
 ## Final Answer

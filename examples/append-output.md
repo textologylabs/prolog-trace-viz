@@ -48,24 +48,28 @@ append([1,2], [3,4], X)
 ## Call Tree
 
 ```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 46, 'rankSpacing': 50}, 'themeVariables': {'fontSize': '15px'}}}%%
 graph TD
 
 %% Nodes
 A["?- append([1,2], [3,4], X)"]
-B["① append([1,2], [3,4], X)<br/>clause 5<br/>X = [1,2,3,4]"]
-C["② append(T, L, R)<br/>clause 5<br/>R = [2,3,4]"]
-D["③ append(T, L, R)<br/>fact 4<br/>R = [3,4]"]
+B["① append([1,2], [3,4], X)<br/>X = [1,2,3,4] · clause 5"]
+C["② append(T, L, R)<br/>R = [2,3,4] · clause 5"]
+D["③ append(T, L, R)<br/>R = [3,4] · fact 4"]
+E["✓ X = [1,2,3,4]"]
 
-%% Edges
+%% Flow
 A --> B
-B -->|"[1.1]"| C
-C -->|"[2.1]"| D
+B --> C
+C --> D
+B --> E
 
 %% Styles
-style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
-style B fill:#c8e6c9,stroke:#388e3c
-style C fill:#c8e6c9,stroke:#388e3c
-style D fill:#c8e6c9,stroke:#388e3c
+style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#0b2440
+style B fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style C fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style D fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style E fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#14361a
 ```
 
 ## Final Answer

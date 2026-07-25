@@ -27,18 +27,22 @@ member(X, [a,b,c])
 ## Call Tree
 
 ```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 46, 'rankSpacing': 50}, 'themeVariables': {'fontSize': '15px'}}}%%
 graph TD
 
 %% Nodes
 A["?- member(X, [a,b,c])"]
-B["① member(X, [a,b,c])<br/>fact 4<br/>X = a"]
+B["① member(X, [a,b,c])<br/>X = a · fact 4"]
+C["✓ X = a"]
 
-%% Edges
+%% Flow
 A --> B
+B --> C
 
 %% Styles
-style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
-style B fill:#c8e6c9,stroke:#388e3c
+style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#0b2440
+style B fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style C fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#14361a
 ```
 
 ## Final Answer
