@@ -156,7 +156,7 @@ function generateTreeSection(context: MarkdownContext): string {
 
   const query = context.originalQuery || context.query;
   lines.push('```mermaid');
-  lines.push(formatTimelineAsMermaid(context.timeline, query, formatterOptions));
+  lines.push(formatTimelineAsMermaid(context.timeline, query, context.finalAnswer, formatterOptions));
   lines.push('```');
 
   return lines.join('\n');

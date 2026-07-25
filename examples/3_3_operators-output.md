@@ -46,24 +46,28 @@ t(0+1+1, B)
 ## Call Tree
 
 ```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 46, 'rankSpacing': 50}, 'themeVariables': {'fontSize': '15px'}}}%%
 graph TD
 
 %% Nodes
 A["?- t(0+1+1, B)"]
-B["① t(0+1+1, B)<br/>clause 28<br/>B = 1+1+0"]
-C["② t(X+1, X1)<br/>fact 26<br/>X1 = 1+0"]
-D["③ t(X1+1, Z)<br/>fact 27<br/>Z = 1+1+0"]
+B["① t(0+1+1, B)<br/>B = 1+1+0 · clause 28"]
+C["② t(X+1, X1)<br/>X1 = 1+0 · fact 26"]
+D["③ t(1+0+1, Z)<br/>Z = 1+1+0 · fact 27"]
+E["✓ B = 1+1+0"]
 
-%% Edges
+%% Flow
 A --> B
-B -->|"[1.1]"| C
-B -->|"[1.2]"| D
+B --> C
+C --> D
+B --> E
 
 %% Styles
-style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px
-style B fill:#c8e6c9,stroke:#388e3c
-style C fill:#c8e6c9,stroke:#388e3c
-style D fill:#c8e6c9,stroke:#388e3c
+style A fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#0b2440
+style B fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style C fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style D fill:#c8e6c9,stroke:#388e3c,color:#14361a
+style E fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#14361a
 ```
 
 ## Final Answer

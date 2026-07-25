@@ -178,32 +178,50 @@ describe('formatTimelineAsMermaid - conjunctive backtracking', () => {
     expect(out).toContain('likes(mary, X), likes(john, X)');
   });
 
-  it('shows both conjuncts, the failure, and the retry', () => {
-    const out = formatTimelineAsMermaid(build(), query);
+  it('shows each goal as it was actually run, with the failure and the answer', () => {
+    const out = formatTimelineAsMermaid(build(), query, 'X = wine');
 
+    // Goals carry the bindings that reached them: john is tried with food, then wine
     expect(out).toContain('likes(mary, X)');
-    expect(out).toContain('likes(john, X)');
-    expect(out).toContain('FAIL');
-    expect(out).toContain('REDO');
+    expect(out).toContain('likes(john, food)');
+    expect(out).toContain('likes(john, wine)');
+    expect(out).toContain('✗ fail');
     expect(out).toContain('X = wine');
   });
 
-  it('does not label the retry with the fact it happened to match', () => {
+  it('chains the goals in execution order rather than fanning from the query', () => {
+    const out = formatTimelineAsMermaid(build(), query, 'X = wine');
+    // A(query) -> B(step1) -> C(step2) -> D(fail); the query has a single child
+    const flow = out.slice(out.indexOf('%% Flow'));
+    expect((flow.match(/^A --> /gm) || []).length).toBe(1);
+  });
+
+  it('renders backtracking as a numbered loop: dead end back to the choice point, then a retry', () => {
+    const out = formatTimelineAsMermaid(build(), query, 'X = wine');
+    expect(out).toMatch(/-\.->\|"backtrack to ①"\| /);
+    expect(out).toMatch(/==>\|"retry"\| /);
+  });
+
+  it('ends on a ✓ node carrying the answer', () => {
+    const out = formatTimelineAsMermaid(build(), query, 'X = wine');
+    expect(out).toContain('"✓ X = wine"');
+  });
+
+  it('omits the answer node when no answer is given', () => {
     const out = formatTimelineAsMermaid(build(), query);
-    // The old, broken tree titled the node "likes(mary, wine)" and leaked _1102=food
+    expect(out).not.toContain('✓ X = wine');
+  });
+
+  it('does not leak internal variables or the rejected binding into labels', () => {
+    const out = formatTimelineAsMermaid(build(), query, 'X = wine');
     expect(out).not.toContain('_1102');
-    expect(out).not.toContain('=food');
+    expect(out).not.toContain('=food'); // bindings are spaced "X = food"; never "=food"
   });
 
   it('styles the failed node red and success nodes green', () => {
     const out = formatTimelineAsMermaid(build(), query);
     expect(out).toMatch(/fill:#ffcdd2/); // failure red
     expect(out).toMatch(/fill:#c8e6c9/); // success green
-  });
-
-  it('draws a dotted backtrack edge from the retry to the step it re-enters', () => {
-    const out = formatTimelineAsMermaid(build(), query);
-    expect(out).toMatch(/-\.->\|"backtrack"\|/);
   });
 
   it('numbers nodes to match the timeline step numbers', () => {
@@ -240,11 +258,12 @@ describe('formatTimelineAsMermaid - recursion', () => {
     },
   ];
 
-  it('nests the recursive child under its parent', () => {
+  it('chains the recursive call into the flow and shows the result', () => {
     const query = 'append([1,2], [3,4], X)';
-    const out = formatTimelineAsMermaid(new TimelineBuilder(events, undefined, query).build(), query);
+    const out = formatTimelineAsMermaid(new TimelineBuilder(events, undefined, query).build(), query, 'X = [1,2,3,4]');
 
-    expect(out).toMatch(/[A-Z]+ -->.* [A-Z]+/);
+    expect(out).toMatch(/[A-Z]+ --> [A-Z]+/);
     expect(out).toContain('X = [1,2,3,4]');
+    expect(out).toContain('"✓ X = [1,2,3,4]"');
   });
 });
