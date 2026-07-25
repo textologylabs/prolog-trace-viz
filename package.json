@@ -37,11 +37,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jarecsni/prolog-trace-viz.git"
+    "url": "git+https://github.com/textologylabs/prolog-trace-viz.git"
   },
-  "homepage": "https://github.com/jarecsni/prolog-trace-viz",
+  "homepage": "https://github.com/textologylabs/prolog-trace-viz",
   "bugs": {
-    "url": "https://github.com/jarecsni/prolog-trace-viz/issues"
+    "url": "https://github.com/textologylabs/prolog-trace-viz/issues"
   },
   "engines": {
     "node": ">=18.0.0"
