@@ -15,14 +15,16 @@ member(X, [a,b,c])
 
 ## Execution Timeline
 
+<pre style="line-height: 1.15">
 ┌─ Step 1: member(X, [a,b,c])
 │  Fact: member(X, [X|_]) [line 4]
 │  Unifications:
 │    X = a
 │    _ = [b,c]
-│  => X = a
+│  =&gt; X = a
 └─
 
+</pre>
 
 ## Call Tree
 

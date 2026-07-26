@@ -15,6 +15,7 @@ append([1,2], [3,4], X)
 
 ## Execution Timeline
 
+<pre style="line-height: 1.15">
 ┌─ Step 1: append([1,2], [3,4], X)
 │  Clause: append([H|T], L, [H|R]) [line 5]
 │  Unifications:
@@ -37,13 +38,14 @@ append([1,2], [3,4], X)
 │  │  │  Fact: append([], L, L) [line 4]
 │  │  │  Unifications:
 │  │  │    L = [3,4]
-│  │  │  => R = [3,4]
+│  │  │  =&gt; R = [3,4]
 │  │  └─
-│  │  => R = [2,3,4]
+│  │  =&gt; R = [2,3,4]
 │  └─
-│  => X = [1,2,3,4]
+│  =&gt; X = [1,2,3,4]
 └─
 
+</pre>
 
 ## Call Tree
 

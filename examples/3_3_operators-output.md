@@ -20,6 +20,7 @@ t(0+1+1, B)
 
 ## Execution Timeline
 
+<pre style="line-height: 1.15">
 ┌─ Step 1: t(0+1+1, B)
 │  Clause: t(X+1+1, Z) [line 28]
 │  Unifications:
@@ -30,18 +31,19 @@ t(0+1+1, B)
 │  
 │  ┌─ Step 2 [Goal 1.1]: t(X+1, X1) → t(0+1, X1)
 │  │  Fact: t(0+1, 1+0) [line 26]
-│  │  => X1 = 1+0
+│  │  =&gt; X1 = 1+0
 │  └─
 │  ┌─ Step 3 [Goal 1.2]: t(X1+1, Z) → t(1+0+1, Z)
 │  │  where X1 = 1+0 (from Step 2)
 │  │  Fact: t(X+0+1, X+1+0) [line 27]
 │  │  Unifications:
 │  │    X = 1
-│  │  => Z = 1+1+0
+│  │  =&gt; Z = 1+1+0
 │  └─
-│  => B = 1+1+0
+│  =&gt; B = 1+1+0
 └─
 
+</pre>
 
 ## Call Tree
 
