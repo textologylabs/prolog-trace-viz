@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-07-26
+
+### Fixed
+- **Execution Timeline rendered as prose in Markdown viewers.** The box-drawing timeline was emitted as raw text with no code block, so viewers set it in a proportional font with prose line-height — misaligning the columns and breaking the `│ ┌ └` rails into gappy, dotted lines. It is now emitted as a self-contained `<pre style="line-height: 1.15">` block: monospaced with a tightened line-height baked in, so the rails render as solid, continuous lines with **no reader-side CSS or editor plugin required**. HTML metacharacters in goals (`<`, `>`, `&`, e.g. `N > 0`) are escaped. GitHub sanitizes the inline style and falls back to a plain monospace block. Example outputs regenerated.
+
 ## [2.9.0] - 2026-07-25
 
 ### Added

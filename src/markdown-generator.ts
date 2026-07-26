@@ -146,9 +146,31 @@ function generateTimelineSection(context: MarkdownContext): string {
     solutionCount: context.solutions?.length,
   };
 
-  lines.push(formatTimeline(context.timeline, formatterOptions));
+  // Emit the box-drawing timeline as a raw <pre> with a tightened line-height
+  // baked in. A plain ``` fence renders monospace but inherits the viewer's
+  // loose code line-height, so the │ ┌ └ rails break into gappy/dotted lines.
+  // Baking line-height here makes the fix travel inside the .md itself — no
+  // reader-side CSS needed. (GitHub sanitizes the style attribute and falls
+  // back to a normal monospace block; MPE and article HTML honor it.)
+  // <pre> is a CommonMark HTML block, so the blank lines between steps are
+  // preserved. Escape HTML metacharacters since goals can contain < > &.
+  const timelineText = formatTimeline(context.timeline, formatterOptions);
+  lines.push('<pre style="line-height: 1.15">');
+  lines.push(escapeHtml(timelineText));
+  lines.push('</pre>');
 
   return lines.join('\n');
+}
+
+/**
+ * Escape HTML metacharacters for safe embedding inside a raw <pre> block.
+ * Prolog goals legitimately contain <, >, and & (e.g. `N > 0`, `X =< Y`).
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 /**

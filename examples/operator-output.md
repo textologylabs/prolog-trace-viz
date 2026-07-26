@@ -16,13 +16,15 @@ t(1+0+1, C)
 
 ## Execution Timeline
 
+<pre style="line-height: 1.15">
 ┌─ Step 1: t(1+0+1, C)
 │  Fact: t(X+0+1, X+1+0) [line 2]
 │  Unifications:
 │    X = 1
-│  => C = 1+1+0
+│  =&gt; C = 1+1+0
 └─
 
+</pre>
 
 ## Call Tree
 
