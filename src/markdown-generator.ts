@@ -264,11 +264,13 @@ function generateTreeSection(context: MarkdownContext): string {
     return lines.join('\n');
   }
 
+  const query = context.originalQuery || context.query;
   const formatterOptions: TreeFormatterOptions = {
     debugFlags: context.formatterOptions?.debugFlags ?? new Set(),
+    labelMode: context.labelMode,
+    query,
   };
 
-  const query = context.originalQuery || context.query;
   lines.push('```mermaid');
   lines.push(formatTimelineAsMermaid(context.timeline, query, context.finalAnswer, formatterOptions, context.solutions));
   lines.push('```');

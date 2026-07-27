@@ -8,9 +8,31 @@
 import { TreeNode } from './tree.js';
 import { TimelineStep, Solution } from './timeline.js';
 import { DebugFlag } from './cli.js';
+import { LabelMode, buildLabelMap } from './coref.js';
 
 export interface TreeFormatterOptions {
   debugFlags?: Set<DebugFlag>;
+  /** Variable-labeling mode; applies the same X@N disambiguation as the timeline. */
+  labelMode?: LabelMode;
+  /** The original query — needed to scope the query's own variables. */
+  query?: string;
+}
+
+/**
+ * A scope-aware relabeling function for tree node text. Mermaid cannot colour
+ * sub-tokens within a node label, so the tree gets the X@N labels (matching the
+ * timeline) but not the per-variable colour.
+ */
+type TreeRelabel = (text: string, scope: 'query' | number) => string;
+const TREE_IDENTITY: TreeRelabel = (t) => t;
+const TREE_VAR_TOKEN = /[A-Za-z_][A-Za-z0-9_]*/g;
+
+function buildTreeRelabel(steps: TimelineStep[], query: string, options: TreeFormatterOptions): TreeRelabel {
+  const mode = options.labelMode;
+  if (!mode || !query) return TREE_IDENTITY;
+  const map = buildLabelMap(steps, query, mode);
+  const active = mode !== 'source' && (mode === 'full' || map.overloaded.size > 0);
+  return active ? (text, scope) => text.replace(TREE_VAR_TOKEN, (tok) => map.label(tok, scope)) : TREE_IDENTITY;
 }
 
 /**
@@ -100,19 +122,22 @@ export function formatTimelineAsMermaid(
   // re-enters them, so a single depth-first pass sees them in time.
   const idOfStep = new Map<number, string>();
 
+  const relabel = buildTreeRelabel(steps, query, options);
+
   const rootId = nextId();
-  nodes.push(`${rootId}["${escapeLabel('?- ' + query)}"]`);
+  nodes.push(`${rootId}["${escapeLabel('?- ' + relabel(query, 'query'))}"]`);
   styles.push(`style ${rootId} ${NODE_STYLE.query}`);
 
   // Walk a sibling list, chaining them in execution order and nesting each
   // one's own subtree beneath it. Returns the last sibling's id (the point the
-  // flow continues from).
-  const walk = (list: TimelineStep[], parentId: string): string | null => {
+  // flow continues from). parentScope is the caller's variable scope: 'query'
+  // at the top, the enclosing step's number for nested subgoals.
+  const walk = (list: TimelineStep[], parentId: string, parentScope: 'query' | number): string | null => {
     let prevId: string | null = null;
     for (const step of list) {
       const id = nextId();
       idOfStep.set(step.stepNumber, id);
-      nodes.push(`${id}[${labelForStep(step)}]`);
+      nodes.push(`${id}[${labelForStep(step, relabel, parentScope)}]`);
       styles.push(`style ${id} ${styleForStep(step)}`);
 
       const origin = step.isRetry && step.retryOfStep !== undefined
@@ -138,13 +163,13 @@ export function formatTimelineAsMermaid(
         edges.push(`${prevId ?? parentId} --> ${id}`);
       }
 
-      walk(step.children, id);
+      walk(step.children, id, step.stepNumber);
       prevId = id;
     }
     return prevId;
   };
 
-  const lastId = walk(steps, rootId);
+  const lastId = walk(steps, rootId, 'query');
 
   if (solutions && solutions.length > 1) {
     // A forest: one ✓ leaf per solution, hung off the last top-level step of
@@ -158,7 +183,7 @@ export function formatTimelineAsMermaid(
       if (!anchorId) continue;
       const termId = nextId();
       const label = sol.bindings.length
-        ? sol.bindings.map(b => `${b.variable} = ${b.value}`).join(', ')
+        ? sol.bindings.map(b => `${relabel(b.variable, 'query')} = ${b.value}`).join(', ')
         : 'true';
       nodes.push(`${termId}["${escapeLabel(`✓ solution ${sol.index}: ${label}`)}"]`);
       styles.push(`style ${termId} ${NODE_STYLE.answer}`);
@@ -167,7 +192,7 @@ export function formatTimelineAsMermaid(
   } else if (finalAnswer && lastId) {
     // Single solution: one terminal ✓ node carrying the answer.
     const termId = nextId();
-    nodes.push(`${termId}["${escapeLabel('✓ ' + finalAnswer)}"]`);
+    nodes.push(`${termId}["${escapeLabel('✓ ' + relabel(finalAnswer, 'query'))}"]`);
     styles.push(`style ${termId} ${NODE_STYLE.answer}`);
     edges.push(`${lastId} --> ${termId}`);
   }
@@ -186,19 +211,19 @@ export function formatTimelineAsMermaid(
  * and what the step bound. A failure is just "Ⓝ ✗ fail" — the goal it tried is
  * on the call node above it.
  */
-function labelForStep(step: TimelineStep): string {
+function labelForStep(step: TimelineStep, relabel: TreeRelabel = TREE_IDENTITY, scope: 'query' | number = 'query'): string {
   if (step.port === 'fail') {
     return `"${toCircledNumber(step.stepNumber)} ✗ fail"`;
   }
 
-  const parts: string[] = [`${toCircledNumber(step.stepNumber)} ${escapeLabel(displayGoal(step))}`];
+  const parts: string[] = [`${toCircledNumber(step.stepNumber)} ${escapeLabel(displayGoal(step, relabel, scope))}`];
 
   const clauseRef = step.clause
     ? `${step.clause.body && step.clause.body !== 'true' ? 'clause' : 'fact'} ${step.clause.line}`
     : '';
 
   if (step.resultBindings && step.resultBindings.length > 0) {
-    const bound = step.resultBindings.map(b => `${b.variable} = ${escapeLabel(b.value)}`).join(', ');
+    const bound = step.resultBindings.map(b => `${relabel(b.variable, scope)} = ${escapeLabel(b.value)}`).join(', ');
     parts.push(clauseRef ? `${bound} · ${clauseRef}` : bound);
   } else if (clauseRef) {
     parts.push(clauseRef);
@@ -212,14 +237,14 @@ function labelForStep(step: TimelineStep): string {
  * clause subgoal) with the bindings that reached it substituted in, so a call
  * shows `likes(john, food)` rather than `likes(john, X)`.
  */
-function displayGoal(step: TimelineStep): string {
+function displayGoal(step: TimelineStep, relabel: TreeRelabel = TREE_IDENTITY, scope: 'query' | number = 'query'): string {
   let goal = step.subgoalTemplate ?? step.goal;
   if (step.subgoalBindings) {
     for (const { variable, value } of step.subgoalBindings) {
       goal = goal.replace(new RegExp(`\\b${variable}\\b`, 'g'), value);
     }
   }
-  return goal;
+  return relabel(goal, scope);
 }
 
 /**
