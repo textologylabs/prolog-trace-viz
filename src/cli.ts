@@ -1,5 +1,9 @@
 import { createError, ErrorCode, ToolError } from './errors.js';
 import { BUILD_INFO, COPYRIGHT_NOTICE } from './build-info.js';
+import { LabelMode } from './coref.js';
+
+/** Highest supported --coref level. */
+export const MAX_COREF_LEVEL = 3;
 
 /**
  * Available debug flags
@@ -29,6 +33,10 @@ export interface CLIOptions {
   allSolutions: boolean;
   /** Also write one file per solution: <source>-soln1.md, -soln2.md, … */
   split: boolean;
+  /** Variable-labeling mode: auto (default), source, or full. */
+  labelMode: LabelMode;
+  /** Coreference detail: 0 off (default), 1 callout, 2 +colour, 3 +binding panel. */
+  corefLevel: number;
 }
 
 export interface CLIResult {
@@ -54,6 +62,9 @@ OPTIONS:
   --all                   Trace all solutions (capped at ${ALL_SOLUTIONS_CAP})
   --split                 Also write one file per solution (<source>-soln1.md, …)
   --tree                  Include call tree diagram (Mermaid) in output
+  --labels:<mode>         Variable labeling: auto (default), source, or full
+  --coref[:<n>]           Coreference detail: 0 off (default), 1 callout,
+                          2 +colour, 3 +binding panel (bare --coref = 1)
   --debug                 Enable all debug features
   --debug:<flag>          Enable specific debug flag (e.g., --debug:internal-vars)
   --debug:<f1>,<f2>       Enable multiple debug flags (comma-separated)
@@ -65,6 +76,14 @@ OPTIONS:
 
 ptv checks for a newer version automatically (at most once per day) and
 offers to update; pass --quiet to suppress that check.
+
+VARIABLE LABELING (--labels):
+  auto                    Disambiguate a name only when it denotes more than
+                          one logical variable (query X vs clause X@1, or a
+                          recursive N@1 vs N@2). Clean names stay clean.
+  source                  Never disambiguate — show source names as written.
+  full                    Always tag clause-instance variables (@step); shows
+                          how Prolog standardizes variables apart on each call.
 
 DEBUG FLAGS:
   internal-vars           Show Prolog's internal variable names alongside
@@ -105,6 +124,8 @@ export function parseArgs(argv: string[]): CLIResult {
     solutions: 1,
     allSolutions: false,
     split: false,
+    labelMode: 'auto',
+    corefLevel: 0,
   };
   
   const positionalArgs: string[] = [];
@@ -181,6 +202,28 @@ export function parseArgs(argv: string[]): CLIResult {
       options.split = true;
     } else if (arg === '--tree') {
       options.showCallTree = true;
+    } else if (arg.startsWith('--labels:')) {
+      const mode = arg.slice('--labels:'.length).trim();
+      if (mode !== 'auto' && mode !== 'source' && mode !== 'full') {
+        return {
+          type: 'error',
+          error: createError(ErrorCode.INVALID_ARGS, `Unknown label mode: ${mode}. Use auto, source, or full.`),
+        };
+      }
+      options.labelMode = mode as LabelMode;
+    } else if (arg === '--coref') {
+      // Bare --coref enables the first level (coreference callout).
+      options.corefLevel = 1;
+    } else if (arg.startsWith('--coref:')) {
+      const lvlStr = arg.slice('--coref:'.length).trim();
+      const lvl = parseInt(lvlStr, 10);
+      if (isNaN(lvl) || lvl < 0 || lvl > MAX_COREF_LEVEL) {
+        return {
+          type: 'error',
+          error: createError(ErrorCode.INVALID_ARGS, `Invalid coref level: ${lvlStr}. Use 0-${MAX_COREF_LEVEL}.`),
+        };
+      }
+      options.corefLevel = lvl;
     } else if (arg === '--verbose') {
       options.verbose = true;
     } else if (arg === '--quiet') {
@@ -244,6 +287,8 @@ export function parseArgs(argv: string[]): CLIResult {
       solutions: options.solutions!,
       allSolutions: options.allSolutions!,
       split: options.split!,
+      labelMode: options.labelMode!,
+      corefLevel: options.corefLevel!,
     },
   };
 }

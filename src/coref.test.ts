@@ -39,6 +39,16 @@ describe('extractVarNames', () => {
   it('returns nothing for a ground term', () => {
     expect(extractVarNames('parents(alice, victoria, albert)')).toEqual([]);
   });
+
+  it('does not mistake an underscore inside a lowercase atom for a variable', () => {
+    // Regression: `sister_of` must not yield the phantom variable `_of`.
+    expect(extractVarNames('sister_of(X, Y)')).toEqual(['X', 'Y']);
+    expect(extractVarNames('is_list(L)')).toEqual(['L']);
+  });
+
+  it('ignores tracer-internal variables like _1150', () => {
+    expect(extractVarNames('sister_of(alice, _1150)')).toEqual([]);
+  });
 });
 
 describe('collectLogicalVars', () => {

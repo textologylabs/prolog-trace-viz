@@ -275,6 +275,8 @@ async function run(options: CLIOptions): Promise<void> {
       finalAnswer,
       solutions,
       formatterOptions,
+      labelMode: options.labelMode,
+      corefLevel: options.corefLevel,
     });
 
     // Write output - default to source file location if not specified
@@ -304,6 +306,8 @@ async function run(options: CLIOptions): Promise<void> {
           solutions: [sol], // length 1 -> single-solution layout
           singleSolutionLabel: `Solution ${sol.index} of ${solutions.length}`,
           formatterOptions,
+          labelMode: options.labelMode,
+          corefLevel: options.corefLevel,
         });
         await writeOutput({
           content: solMarkdown,
