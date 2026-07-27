@@ -7,6 +7,7 @@ import {
   clauseCorefClasses,
   queryHeadLinks,
   buildColoring,
+  buildBindingEnvironment,
   LogicalVar,
 } from './coref.js';
 import { TimelineStep } from './timeline.js';
@@ -207,6 +208,25 @@ describe('buildColoring (coreference classes)', () => {
     expect(css).toContain('<style>');
     expect(css).toContain('.ptv-c0{color:');
     expect(css).toContain('@media (prefers-color-scheme: dark)');
+  });
+});
+
+describe('buildBindingEnvironment (substitution trail)', () => {
+  it('groups coreferring variables into one row and harvests values', () => {
+    const s = sisterStep();
+    s.unifications = [{ variable: 'X', value: 'alice' }];   // clause X ← alice
+    s.resultBindings = [{ variable: 'X', value: 'edward' }]; // query X ← edward (root)
+    const query = 'sister_of(alice, X)';
+    const labelMap = buildLabelMap([s], query, 'auto');
+    const coloring = buildColoring([s], query);
+    const rows = buildBindingEnvironment([s], query, labelMap, coloring);
+
+    // The query X ≡ clause Y class resolves to edward, on a single row.
+    const qRow = rows.find(r => r.labels.includes('X') && r.labels.includes('Y'));
+    expect(qRow?.value).toBe('edward');
+    // The clause's own X (the false friend) is a separate row bound to alice.
+    const clauseX = rows.find(r => r.labels.length === 1 && r.labels[0] === 'X@1');
+    expect(clauseX?.value).toBe('alice');
   });
 });
 

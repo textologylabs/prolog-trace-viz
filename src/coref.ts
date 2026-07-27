@@ -387,3 +387,72 @@ export function buildColoring(steps: TimelineStep[], query: string): Coloring {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Binding-environment panel (--coref:3)
+// ---------------------------------------------------------------------------
+
+/** One row of the binding-environment table: a coreference class and its value. */
+export interface BindingRow {
+  /** Colour class id, or null if uncoloured. */
+  colourId: number | null;
+  /** Labeled variables in this coreference class, e.g. ["X", "Y"]. */
+  labels: string[];
+  /** The value the class resolved to. */
+  value: string;
+  /** The step at which that value was established. */
+  whereStep: number;
+}
+
+const isInternalValue = (v: string) => /^_\d+$/.test(v.trim());
+
+/**
+ * Build the substitution trail: harvest each logical variable's value from the
+ * trace (clause-head unifications in clause scope; results and sibling bindings
+ * in the caller's scope), then group by coreference class so co-referring
+ * variables share one row. Unbound variables are omitted.
+ */
+export function buildBindingEnvironment(
+  steps: TimelineStep[],
+  query: string,
+  labelMap: LabelMap,
+  coloring: Coloring,
+): BindingRow[] {
+  const values = new Map<string, { value: string; step: number }>();
+  const setVal = (name: string, scope: 'query' | number, value: string, step: number) => {
+    if (!isInternalValue(value)) values.set(varKey(name, scope), { value, step });
+  };
+
+  const walk = (step: TimelineStep, parentScope: 'query' | number, isRoot: boolean) => {
+    const goalScope: 'query' | number = isRoot ? 'query' : parentScope;
+    for (const u of step.unifications) setVal(u.variable, step.stepNumber, u.value, step.stepNumber);
+    for (const b of step.resultBindings ?? []) setVal(b.variable, goalScope, b.value, step.stepNumber);
+    for (const b of step.subgoalBindings ?? []) setVal(b.variable, goalScope, b.value, b.fromStep);
+    for (const c of step.children) walk(c, step.stepNumber, false);
+  };
+  steps.forEach(s => walk(s, 'query', true));
+
+  // Group logical variables by coreference class (colour), keeping uncoloured
+  // ones as singletons.
+  const groups = new Map<string, LogicalVar[]>();
+  for (const n of collectLogicalVars(steps, query)) {
+    const cid = coloring.classId(n.name, n.scope);
+    const gkey = cid !== null ? `c${cid}` : `s:${varKey(n.name, n.scope)}`;
+    (groups.get(gkey) ?? groups.set(gkey, []).get(gkey)!).push(n);
+  }
+
+  const rows: BindingRow[] = [];
+  for (const ms of groups.values()) {
+    let found: { value: string; step: number } | undefined;
+    for (const m of ms) {
+      const v = values.get(varKey(m.name, m.scope));
+      if (v) { found = v; break; }
+    }
+    if (!found) continue; // unbound — omit
+    const labels = [...new Set(ms.map(m => labelMap.label(m.name, m.scope)))];
+    rows.push({ colourId: coloring.classId(ms[0].name, ms[0].scope), labels, value: found.value, whereStep: found.step });
+  }
+
+  rows.sort((a, b) => a.whereStep - b.whereStep || (a.colourId ?? 99) - (b.colourId ?? 99));
+  return rows;
+}
