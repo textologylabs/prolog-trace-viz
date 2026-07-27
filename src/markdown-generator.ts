@@ -151,6 +151,7 @@ function generateTimelineSection(context: MarkdownContext): string {
     solutionCount: context.solutions?.length,
     labelMode: context.labelMode,
     query: context.query,
+    corefLevel: context.corefLevel,
   };
 
   // Emit the box-drawing timeline as a raw <pre> with a tightened line-height

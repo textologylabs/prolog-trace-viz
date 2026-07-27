@@ -14,7 +14,7 @@
  * disambiguates them with step-indexed labels like `X@2`.
  */
 import { TimelineStep } from './timeline.js';
-import { extractQueryVariables } from './query.js';
+import { extractQueryVariables, parseTerm, splitConjuncts, isVariable } from './query.js';
 
 /** How variable names are displayed. */
 export type LabelMode = 'auto' | 'source' | 'full';
@@ -165,4 +165,88 @@ export function computeLabels(vars: LogicalVar[], mode: LabelMode): LabelMap {
 /** Convenience: build the label map for a trace in one call. */
 export function buildLabelMap(steps: TimelineStep[], query: string, mode: LabelMode): LabelMap {
   return computeLabels(collectLogicalVars(steps, query), mode);
+}
+
+// ---------------------------------------------------------------------------
+// Coreference callout (--coref:1)
+// ---------------------------------------------------------------------------
+
+/** A variable that appears in more than one place within a clause. */
+export interface SharedVar {
+  /** Display label within the clause scope, e.g. "M" or "X@1". */
+  label: string;
+  /** Where it occurs: "head" and/or subgoal labels like "[1.2]". */
+  places: string[];
+}
+
+/** A query variable identified with a clause variable via head unification. */
+export interface QueryLink {
+  /** The query's variable (query scope), e.g. "X". */
+  queryVar: string;
+  /** The clause head variable it unifies with (clause scope), e.g. "Y". */
+  clauseVar: string;
+}
+
+/** Strip a subgoal's " → instantiated" tail, leaving the source template. */
+function subgoalTemplate(goal: string): string {
+  const i = goal.indexOf(' → ');
+  return i === -1 ? goal : goal.slice(0, i);
+}
+
+/**
+ * The shared-variable coreference classes within a clause application: each
+ * variable that occurs in more than one goal (head or a body subgoal). These
+ * are the "plumbing" of the clause — e.g. `M`/`F` shared by the two `parents`
+ * subgoals is what makes the rule mean "same parents".
+ */
+export function clauseCorefClasses(step: TimelineStep, labelMap: LabelMap): SharedVar[] {
+  if (!step.clause) return [];
+  const scope = step.stepNumber;
+  const places = new Map<string, string[]>();
+  const add = (name: string, place: string) => {
+    const arr = places.get(name) ?? [];
+    if (!arr.includes(place)) arr.push(place);
+    places.set(name, arr);
+  };
+
+  for (const name of extractVarNames(step.clause.head)) add(name, 'head');
+  for (const sg of step.subgoals) {
+    for (const name of extractVarNames(subgoalTemplate(sg.goal))) add(name, sg.label);
+  }
+
+  const shared: SharedVar[] = [];
+  for (const [name, pls] of places) {
+    if (pls.length >= 2) shared.push({ label: labelMap.label(name, scope), places: pls });
+  }
+  return shared;
+}
+
+/**
+ * The query↔clause identifications made when the query goal unifies with the
+ * clause head: for each argument position where the query has a variable, that
+ * variable co-refers with the head variable at the same position. This is the
+ * channel a solution travels back through (query `X` ≡ clause `Y`).
+ */
+export function queryHeadLinks(query: string, step: TimelineStep, labelMap: LabelMap): QueryLink[] {
+  if (!step.clause) return [];
+  const head = parseTerm(step.clause.head);
+  if (!head) return [];
+
+  const conjunct = splitConjuncts(query)
+    .map(c => parseTerm(c))
+    .find(t => t !== null && t.functor === head.functor && t.args.length === head.args.length);
+  if (!conjunct) return [];
+
+  const links: QueryLink[] = [];
+  for (let i = 0; i < head.args.length; i++) {
+    const qArg = conjunct.args[i];
+    const hArg = head.args[i];
+    if (isVariable(qArg) && isVariable(hArg)) {
+      links.push({
+        queryVar: labelMap.label(qArg, 'query'),
+        clauseVar: labelMap.label(hArg, step.stepNumber),
+      });
+    }
+  }
+  return links;
 }
