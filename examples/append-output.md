@@ -17,30 +17,30 @@ append([1,2], [3,4], X)
 
 <pre style="line-height: 1.15">
 ┌─ Step 1: append([1,2], [3,4], X)
-│  Clause: append([H|T], L, [H|R]) [line 5]
+│  Clause: append([H@1|T@1], L@1, [H@1|R@1]) [line 5]
 │  Unifications:
-│    H = 1
-│    T = [2]
-│    L = [3,4]
+│    H@1 = 1
+│    T@1 = [2]
+│    L@1 = [3,4]
 │  Subgoals:
-│    [1.1] append(T, L, R) → append([2], [3,4], R)
+│    [1.1] append(T@1, L@1, R@1) → append([2], [3,4], R@1)
 │  
-│  ┌─ Step 2 [Goal 1.1]: append(T, L, R) → append([2], [3,4], R)
-│  │  Clause: append([H|T], L, [H|R]) [line 5]
+│  ┌─ Step 2 [Goal 1.1]: append(T@1, L@1, R@1) → append([2], [3,4], R@1)
+│  │  Clause: append([H@2|T@2], L@2, [H@2|R@2]) [line 5]
 │  │  Unifications:
-│  │    H = 2
-│  │    T = []
-│  │    L = [3,4]
+│  │    H@2 = 2
+│  │    T@2 = []
+│  │    L@2 = [3,4]
 │  │  Subgoals:
-│  │    [2.1] append(T, L, R) → append([], [3,4], R)
+│  │    [2.1] append(T@2, L@2, R@2) → append([], [3,4], R@2)
 │  │  
-│  │  ┌─ Step 3 [Goal 2.1]: append(T, L, R) → append([], [3,4], R)
-│  │  │  Fact: append([], L, L) [line 4]
+│  │  ┌─ Step 3 [Goal 2.1]: append(T@2, L@2, R@2) → append([], [3,4], R@2)
+│  │  │  Fact: append([], L@3, L@3) [line 4]
 │  │  │  Unifications:
-│  │  │    L = [3,4]
-│  │  │  =&gt; R = [3,4]
+│  │  │    L@3 = [3,4]
+│  │  │  =&gt; R@2 = [3,4]
 │  │  └─
-│  │  =&gt; R = [2,3,4]
+│  │  =&gt; R@1 = [2,3,4]
 │  └─
 │  =&gt; X = [1,2,3,4]
 └─
@@ -56,8 +56,8 @@ graph TD
 %% Nodes
 A["?- append([1,2], [3,4], X)"]
 B["① append([1,2], [3,4], X)<br/>X = [1,2,3,4] · clause 5"]
-C["② append(T, L, R)<br/>R = [2,3,4] · clause 5"]
-D["③ append(T, L, R)<br/>R = [3,4] · fact 4"]
+C["② append(T@1, L@1, R@1)<br/>R@1 = [2,3,4] · clause 5"]
+D["③ append(T@2, L@2, R@2)<br/>R@2 = [3,4] · fact 4"]
 E["✓ X = [1,2,3,4]"]
 
 %% Flow
