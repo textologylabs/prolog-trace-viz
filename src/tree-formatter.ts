@@ -6,7 +6,7 @@
  */
 
 import { TreeNode } from './tree.js';
-import { TimelineStep, Solution } from './timeline.js';
+import { TimelineStep, Solution, stepScope } from './timeline.js';
 import { DebugFlag } from './cli.js';
 import { LabelMode, buildLabelMap } from './coref.js';
 
@@ -136,6 +136,12 @@ export function formatTimelineAsMermaid(
   // that actually established that solution (not a synthesized ancestor re-exit).
   const lastIdBySolution = new Map<number, string>();
 
+  // Solutions reached by a *demand-driven* redo (findnsols/; asking for the next
+  // answer, no failure to trigger it). These still backtrack — into the recorded
+  // choice point — but there is no dead-end node to draw the unwind from, so the
+  // loop is drawn later from the previous solution's leaf (see the forest below).
+  const demandRetryOrigin = new Map<number, { id: string; step: number }>();
+
   const walk = (list: TimelineStep[], parentId: string, parentScope: 'query' | number): string | null => {
     let prevId: string | null = null;
     for (const step of list) {
@@ -144,7 +150,7 @@ export function formatTimelineAsMermaid(
       // node; thread the real re-solution beneath it into the current flow, so
       // the solution hangs off the goal that actually backtracked.
       if (step.isAncestorReentry) {
-        const childLast = walk(step.children, prevId ?? parentId, step.stepNumber);
+        const childLast = walk(step.children, prevId ?? parentId, stepScope(step));
         if (childLast) {
           prevId = childLast;
           if (step.solutionIndex !== undefined) lastIdBySolution.set(step.solutionIndex, childLast);
@@ -162,16 +168,22 @@ export function formatTimelineAsMermaid(
         : undefined;
 
       if (origin) {
-        // The thick "next solution" edge shows Prolog backtracking into the
-        // choice point (whether a failure or a demand for the next answer drove
-        // it). The dotted "backtrack to Ⓝ" edge is only informative when a
-        // *distinct* dead end elsewhere — a genuine failure — triggered the
-        // unwind; enumeration-driven re-solutions have no such dead end.
+        // Every redo is backtracking: Prolog unwinds to a choice point and takes
+        // its next alternative. Two flavours, both drawn as a dotted "backtrack
+        // to Ⓝ" loop into the choice point plus the thick "next solution" edge on
+        // to the re-solution:
+        //   - failure-driven: the unwind starts at a distinct dead end (a failed
+        //     goal), so the loop is drawn here, from that dead end.
+        //   - demand-driven (findnsols/;): no failure, so the unwind starts where
+        //     the *previous* solution completed. That leaf does not exist yet, so
+        //     record the choice point and draw the loop with the forest below.
         const deadEnd = step.backtrackFromStep !== undefined
           ? idOfStep.get(step.backtrackFromStep)
           : undefined;
         if (deadEnd && deadEnd !== origin) {
           edges.push(`${deadEnd} -.->|"backtrack to ${toCircledNumber(step.retryOfStep!)}"| ${origin}`);
+        } else if (step.backtrackFromStep === undefined && step.solutionIndex !== undefined) {
+          demandRetryOrigin.set(step.solutionIndex, { id: origin, step: step.retryOfStep! });
         }
         edges.push(`${origin} ==>|"next solution"| ${id}`);
       } else {
@@ -181,7 +193,7 @@ export function formatTimelineAsMermaid(
       // Record before recursing so a deeper node of the same solution wins —
       // the ✓ leaf should hang off the innermost goal that established it.
       if (step.solutionIndex !== undefined) lastIdBySolution.set(step.solutionIndex, id);
-      walk(step.children, id, step.stepNumber);
+      walk(step.children, id, stepScope(step));
       prevId = id;
     }
     return prevId;
@@ -192,6 +204,7 @@ export function formatTimelineAsMermaid(
   if (solutions && solutions.length > 1) {
     // A forest: one ✓ leaf per solution, hung off the last node that solution
     // actually reached. Turns the flow into the full search tree.
+    let prevLeafId: string | null = null;
     for (const sol of solutions) {
       const anchorId = lastIdBySolution.get(sol.index) ?? lastId;
       if (!anchorId) continue;
@@ -201,7 +214,17 @@ export function formatTimelineAsMermaid(
         : 'true';
       nodes.push(`${termId}["${escapeLabel(`✓ solution ${sol.index}: ${label}`)}"]`);
       styles.push(`style ${termId} ${NODE_STYLE.answer}`);
+      // Demand-driven backtrack loop: having found the previous solution, Prolog
+      // unwound from it back to this solution's choice point to seek another
+      // answer. Draw the dotted loop from that leaf so the backtracking is visible
+      // even though nothing failed. The thick "next solution" edge (drawn in the
+      // walk) then carries the flow on to the re-solution.
+      const back = demandRetryOrigin.get(sol.index);
+      if (back && prevLeafId) {
+        edges.push(`${prevLeafId} -.->|"backtrack to ${toCircledNumber(back.step)}"| ${back.id}`);
+      }
       edges.push(`${anchorId} --> ${termId}`);
+      prevLeafId = termId;
     }
   } else if (finalAnswer && lastId) {
     // Single solution: one terminal ✓ node carrying the answer.

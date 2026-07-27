@@ -6,7 +6,7 @@
  * With --debug:internal-vars, shows both: "Z (_2008) = value"
  */
 
-import { TimelineStep } from './timeline.js';
+import { TimelineStep, stepScope } from './timeline.js';
 import { DebugFlag } from './cli.js';
 import { LabelMode, LabelMap, Coloring, buildLabelMap, buildColoringBySolution, clauseCorefClasses, queryHeadLinks } from './coref.js';
 
@@ -169,7 +169,7 @@ function formatStepNested(
   // the root, the enclosing clause's scope in a child). The clause line,
   // unifications and subgoals are written in *this* step's clause scope.
   const goalScope: 'query' | number = depth === 0 ? 'query' : parentScope;
-  const clauseScope: 'query' | number = step.stepNumber;
+  const clauseScope: 'query' | number = stepScope(step);
   
   // Step header with box drawing. A retry keeps its REDO label after the
   // following EXIT merges the next solution into it — but an ancestor re-entry
@@ -255,7 +255,7 @@ function formatStepNested(
 
   // Coreference callout (--coref:1): name the identity classes for this clause
   // — the query↔head channel (root only) and the variables shared across goals.
-  if (ctx.corefLevel >= 1 && ctx.labelMap && step.clause && (step.port === 'merged' || step.port === 'call')) {
+  if (ctx.corefLevel >= 1 && ctx.labelMap && step.clause && !step.isAncestorReentry && (step.port === 'merged' || step.port === 'call')) {
     lines.push(...formatCorefCallout(step, depth, indent, ctx));
   }
 
@@ -264,7 +264,7 @@ function formatStepNested(
   if (step.children.length > 0) {
     lines.push(`${indent}│  `);
     for (const child of step.children) {
-      lines.push(...formatStepNested(child, depth + 1, options, ctx, step.stepNumber));
+      lines.push(...formatStepNested(child, depth + 1, options, ctx, stepScope(step)));
     }
   }
 

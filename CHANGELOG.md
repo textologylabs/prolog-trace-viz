@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.3] - 2026-07-27
+
+### Fixed
+- **A demand-driven redo drew no backtrack line.** When enumerating solutions (`-n`/`--all`), asking a choice point for its next answer *is* backtracking — but the call tree only drew the dotted `backtrack to Ⓝ` loop for *failure*-driven backtracking, so a query like `grandparent(tom, GC) -n 2`, whose second solution comes from re-satisfying `parent(bob, C)`, showed a bare `next solution` edge and no backtrack at all. The tree now draws the same loop for demand-driven redos, sourced from the point Prolog actually unwinds *from* — the previous solution's leaf — back up to the choice point, then the `next solution` edge on to the re-solution. Failure-driven backtracking is unchanged.
+- **A re-solved goal was mislabelled as a fresh, unrelated goal.** On backtracking, an ancestor clause re-`EXIT`s the *same* instance it already entered — but the builder was backfilling it as a brand-new clause application, minting a phantom second instance. In `grandparent(tom, GC) -n 2` the second solution's `parent(P, C)` therefore rendered as `parent(P@4, C@4)` — first argument shown *unbound* and tagged with a spurious `@4` scope — when it is the same goal as the first pass with `P` still bound to `bob`. Now an ancestor re-entry aliases back to the original instance's scope (`scopeId`), and a retry inherits its origin's subgoal identity and the earlier-sibling bindings that persist across the backtrack. The goal reads `parent(bob, C)` in both passes, and step markers stay consistent (`[Goal 1.2]`, not `[4.2]`). A single-instance query no longer shows `@N` tags at all (there is nothing to disambiguate); recursion, which has genuinely distinct instances, still tags them (`@1`, `@4`, `@7`). The `--coref:1` callout is no longer reprinted on the consequential re-exit.
+
 ## [2.10.2] - 2026-07-27
 
 ### Fixed
