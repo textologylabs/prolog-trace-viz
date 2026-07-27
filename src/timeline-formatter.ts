@@ -207,7 +207,13 @@ function formatStepNested(
     fullGoalDisplay = `${portLabel}${relabel(displayWithArrow, goalScope)}`;
   }
 
-  lines.push(`${indent}┌─ Step ${step.stepNumber}${subgoalMarker}: ${fullGoalDisplay}`);
+  // An ancestor re-entry is not a genuine step (it reuses the number of the
+  // instance it re-satisfies), so it wears no "Step N:" header — the
+  // "Succeeds again (Step N re-satisfied)" line below names what re-solved.
+  const stepHeader = step.isAncestorReentry
+    ? `${indent}┌─ ${fullGoalDisplay}`
+    : `${indent}┌─ Step ${step.stepNumber}${subgoalMarker}: ${fullGoalDisplay}`;
+  lines.push(stepHeader);
 
   // Show binding context if we have bindings from sibling steps
   if (step.subgoalBindings && step.subgoalBindings.length > 0) {

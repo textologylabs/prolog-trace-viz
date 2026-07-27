@@ -687,14 +687,23 @@ describe('Backtracking - ancestor re-exit is not a choice point', () => {
     expect(parentRetry!.isAncestorReentry).toBeFalsy(); // the real choice point
   });
 
-  it('aliases the ancestor re-entry to the original clause instance scope', () => {
-    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+  it('re-entry reuses the original instance number and scope, consuming no new step', () => {
+    const built = new TimelineBuilder(events).build();
+    const timeline = flattenTimeline(built);
     const gp = timeline.find(s => s.goal.startsWith('grandparent') && !s.isRetry)!; // Step 1
     const gpReentry = timeline.find(s => s.isRetry && s.goal.startsWith('grandparent'))!;
-    // The re-entry re-EXITs Step 1's instance, so it inherits Step 1's scope
-    // rather than minting a phantom second instance keyed by its own step number.
+    const parentRetry = timeline.find(s => s.isRetry && s.goal.startsWith('parent'))!;
+
+    // The re-entry re-EXITs Step 1's instance: it reuses Step 1's number and
+    // scope rather than minting a phantom second instance.
+    expect(gpReentry.stepNumber).toBe(gp.stepNumber);
     expect(gpReentry.scopeId).toBe(stepScope(gp));
-    expect(gpReentry.scopeId).not.toBe(gpReentry.stepNumber);
+
+    // Because the re-entry consumes no number, the genuine steps stay
+    // consecutive: the parent redo is Step 4 (not 5, with a 4-shaped gap).
+    expect(parentRetry.stepNumber).toBe(4);
+    expect(timeline.filter(s => !s.isAncestorReentry).map(s => s.stepNumber))
+      .toEqual([1, 2, 3, 4]);
   });
 
   it('re-solves the same subgoal on redo: origin identity + persisting sibling binding', () => {

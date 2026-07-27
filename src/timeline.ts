@@ -573,11 +573,24 @@ export class TimelineBuilder {
 
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
-        counter++;
-        step.stepNumber = counter;
 
         // Resolve which subgoal slot this step occupies
         const origin = this.retryOrigin.get(step);
+
+        // An ancestor re-entry is not a genuine execution step — it re-EXITs an
+        // instance it already entered. Reuse that instance's number (and scope)
+        // and do NOT consume a fresh one, so real steps stay consecutively
+        // numbered and the call tree shows no phantom gap where the re-entry
+        // (which it never draws) would have sat. The origin is an ancestor
+        // earlier in depth-first order, so it is already renumbered.
+        if (step.isAncestorReentry && origin) {
+          step.stepNumber = origin.stepNumber;
+          step.scopeId = origin.stepNumber;
+        } else {
+          counter++;
+          step.stepNumber = counter;
+        }
+
         let slot: number | undefined;
         if (origin) {
           // The origin is an earlier sibling, so it is already renumbered.
