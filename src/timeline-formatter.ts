@@ -172,10 +172,14 @@ function formatStepNested(
   const clauseScope: 'query' | number = step.stepNumber;
   
   // Step header with box drawing. A retry keeps its REDO label after the
-  // following EXIT merges the next solution into it.
-  const portLabel = step.isRetry
-    ? 'REDO '
-    : step.port === 'merged' ? '' : step.port.toUpperCase() + ' ';
+  // following EXIT merges the next solution into it — but an ancestor re-entry
+  // never actually redid (it only re-EXITs as a consequence), so it wears no
+  // REDO label.
+  const portLabel = step.isAncestorReentry
+    ? ''
+    : step.isRetry
+      ? 'REDO '
+      : step.port === 'merged' ? '' : step.port.toUpperCase() + ' ';
   // subgoalLabel is like "[1.1]", strip brackets for cleaner display
   const subgoalMarker = step.subgoalLabel ? ` [Goal ${step.subgoalLabel.slice(1, -1)}]` : '';
   
@@ -212,8 +216,13 @@ function formatStepNested(
     }
   }
 
-  // Explain why execution came back to this goal
-  if (step.isRetry) {
+  // Explain why execution came back to this goal.
+  if (step.isAncestorReentry) {
+    // Not a real backtrack — this goal only succeeds a second time because a
+    // goal beneath it re-solved.
+    const of = step.retryOfStep ? ` (Step ${step.retryOfStep} re-satisfied)` : '';
+    lines.push(`${indent}│  Succeeds again${of} — a goal below it re-solved on backtracking`);
+  } else if (step.isRetry) {
     const retryOf = step.retryOfStep ? `Retry of Step ${step.retryOfStep}` : 'Retry';
     // A failure triggered it (backtrackFromStep set) → name the binding it undid.
     // Otherwise it's enumeration asking the goal for its next solution.
@@ -227,7 +236,12 @@ function formatStepNested(
   switch (step.port) {
     case 'call':
     case 'merged':
-      lines.push(...formatMergedContent(step, indent, showInternalVars, relabel, clauseScope));
+      // An ancestor re-entry just re-succeeds; re-printing its clause and
+      // subgoals is noise (they didn't run again). Show only the re-success line
+      // above, its re-solved child below, and the new result.
+      if (!step.isAncestorReentry) {
+        lines.push(...formatMergedContent(step, indent, showInternalVars, relabel, clauseScope));
+      }
       break;
     case 'redo':
       if (!step.isRetry) {
