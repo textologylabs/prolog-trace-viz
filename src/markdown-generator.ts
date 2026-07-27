@@ -8,7 +8,7 @@ import { formatTimeline, TimelineFormatterOptions } from './timeline-formatter.j
 import { formatTimelineAsMermaid, TreeFormatterOptions } from './tree-formatter.js';
 
 import { DebugFlag } from './cli.js';
-import { LabelMode, buildColoring } from './coref.js';
+import { LabelMode, buildColoring, buildLabelMap, buildBindingEnvironment } from './coref.js';
 
 export interface ClauseDefinition {
   line: number;
@@ -71,7 +71,13 @@ export function generateMarkdown(context: MarkdownContext): string {
   // Timeline
   sections.push(generateTimelineSection(context));
   sections.push('');
-  
+
+  // Binding-environment panel (--coref:3): the substitution trail.
+  if ((context.corefLevel ?? 0) >= 3 && context.query && context.labelMode) {
+    sections.push(generateBindingPanel(context));
+    sections.push('');
+  }
+
   // Tree (only if showCallTree is enabled)
   if (context.formatterOptions?.showCallTree) {
     sections.push(generateTreeSection(context));
@@ -196,6 +202,31 @@ function escapeHtml(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Generate the binding-environment panel (--coref:3): the substitution trail,
+ * one row per coreference class with the value it resolved to. Coreferring
+ * variables share a row (joined by ≡) and the class colour.
+ */
+function generateBindingPanel(context: MarkdownContext): string {
+  const labelMap = buildLabelMap(context.timeline, context.query, context.labelMode!);
+  const coloring = buildColoring(context.timeline, context.query);
+  const rows = buildBindingEnvironment(context.timeline, context.query, labelMap, coloring);
+
+  const lines: string[] = ['## Variable Bindings', ''];
+  if (rows.length === 0) {
+    lines.push('_No variables were bound._');
+    return lines.join('\n');
+  }
+  lines.push('| Variable | Binding | Bound at |');
+  lines.push('|----------|---------|----------|');
+  for (const row of rows) {
+    const names = row.labels.join(' ≡ ');
+    const cell = row.colourId !== null ? `<span class="ptv-c${row.colourId}">${names}</span>` : names;
+    lines.push(`| ${cell} | \`${row.value}\` | Step ${row.whereStep} |`);
+  }
+  return lines.join('\n');
 }
 
 /**
