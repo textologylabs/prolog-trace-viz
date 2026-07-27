@@ -43,9 +43,24 @@ export interface TimelineStep {
   // second time. Only the *origin* retry — the goal Prolog actually backtracked
   // into — is a real choice point; ancestors merely re-succeed.
   isAncestorReentry?: boolean;
+  // The scope this step's clause instance belongs to, for variable labelling and
+  // colouring. Normally a step *is* its own clause instance, so scope = stepNumber
+  // (the default when this is undefined). An ancestor re-entry is NOT a fresh
+  // instance — it re-EXITs the clause it already entered — so it aliases back to
+  // that original step's scope, keeping `X@N` labels and colours consistent
+  // across the re-solution instead of minting a phantom second instance.
+  scopeId?: number;
   solutionIndex?: number;   // Which enumerated solution's work this step belongs to (1-based)
   retryRejected?: Array<{ variable: string; value: string }>; // The bindings backtracking undid
   children: TimelineStep[]; // Nested child steps
+}
+
+/**
+ * The scope a step's variables live in for labelling/colouring: its own step
+ * number, unless it aliases an earlier clause instance (an ancestor re-entry).
+ */
+export function stepScope(step: TimelineStep): number {
+  return step.scopeId ?? step.stepNumber;
 }
 
 /**
@@ -419,6 +434,10 @@ export class TimelineBuilder {
       // consequence of the origin re-solving. Mark it so the renderer does not
       // draw it as a choice point that backtracked.
       step.isAncestorReentry = true;
+      // It is the *same* clause instance re-exiting, not a new application, so it
+      // inherits the original instance's scope: its variables keep their original
+      // labels/colours rather than appearing as a spurious fresh instance.
+      step.scopeId = ancestor.scopeId ?? ancestor.stepNumber;
     }
 
     this.pushRetryStep(origin, event.goal);
@@ -588,8 +607,21 @@ export class TimelineBuilder {
           }));
         }
         
-        // Assign subgoalLabel and template based on parent's subgoals (now that clause info is backfilled)
-        if (parent && parent.subgoals.length > 0 && slot !== undefined && slot < parent.subgoals.length) {
+        // Assign subgoalLabel and template.
+        if (origin) {
+          // A retry re-solves the *very same* subgoal its origin solved, so it
+          // takes that subgoal's identity — label, template, and the incoming
+          // bindings from earlier siblings. Those bindings persist across the
+          // backtrack (only this goal's own output was undone), so the retry is
+          // re-entered with them still applied — e.g. `parent(P, C)` redone with
+          // P still = bob. Inheriting from the origin (rather than the parent's
+          // subgoals) is also what keeps a retry nested under a re-entered
+          // ancestor from picking up that ancestor's re-numbered subgoal labels.
+          step.subgoalLabel = origin.subgoalLabel;
+          step.subgoalTemplate = origin.subgoalTemplate;
+          step.subgoalInstantiated = origin.subgoalInstantiated;
+          step.subgoalBindings = origin.subgoalBindings;
+        } else if (parent && parent.subgoals.length > 0 && slot !== undefined && slot < parent.subgoals.length) {
           step.subgoalLabel = parent.subgoals[slot].label;
 
           // Extract template from parent's subgoal (format: "template → instantiated" or just "template")
@@ -601,22 +633,12 @@ export class TimelineBuilder {
           } else {
             step.subgoalTemplate = subgoalGoal;
           }
-          
-          // Compute bindings applied to reach this goal from template.
-          // Not for a retry: backtracking undoes the bindings the earlier
-          // solution made, so the goal is re-entered uninstantiated.
-          if (!origin) {
-            step.subgoalBindings = this.computeSubgoalBindings(
-              step.subgoalTemplate,
-              step.goal,
-              siblingResults
-            );
-          }
-        } else if (origin) {
-          // Retry of a step whose slot is unknown - it solves the same subgoal.
-          step.subgoalLabel = origin.subgoalLabel;
-          step.subgoalTemplate = origin.subgoalTemplate;
-          step.subgoalInstantiated = origin.subgoalInstantiated;
+
+          step.subgoalBindings = this.computeSubgoalBindings(
+            step.subgoalTemplate,
+            step.goal,
+            siblingResults
+          );
         } else if (!parent && step.subgoalTemplate) {
           // Top-level goal: show what earlier conjuncts bound in it.
           step.subgoalBindings = this.computeSubgoalBindings(

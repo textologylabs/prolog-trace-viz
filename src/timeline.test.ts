@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { TimelineBuilder, TraceEvent, flattenTimeline } from './timeline.js';
+import { TimelineBuilder, TraceEvent, flattenTimeline, stepScope } from './timeline.js';
 
 describe('Timeline merging - non-recursive', () => {
   it('should merge CALL/EXIT pairs in correct order', () => {
@@ -685,5 +685,30 @@ describe('Backtracking - ancestor re-exit is not a choice point', () => {
     expect(gpReentry!.isAncestorReentry).toBe(true);   // consequential re-success
     expect(parentRetry).toBeDefined();
     expect(parentRetry!.isAncestorReentry).toBeFalsy(); // the real choice point
+  });
+
+  it('aliases the ancestor re-entry to the original clause instance scope', () => {
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+    const gp = timeline.find(s => s.goal.startsWith('grandparent') && !s.isRetry)!; // Step 1
+    const gpReentry = timeline.find(s => s.isRetry && s.goal.startsWith('grandparent'))!;
+    // The re-entry re-EXITs Step 1's instance, so it inherits Step 1's scope
+    // rather than minting a phantom second instance keyed by its own step number.
+    expect(gpReentry.scopeId).toBe(stepScope(gp));
+    expect(gpReentry.scopeId).not.toBe(gpReentry.stepNumber);
+  });
+
+  it('re-solves the same subgoal on redo: origin identity + persisting sibling binding', () => {
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+    const first = timeline.find(s => !s.isRetry && s.subgoalTemplate === 'parent(P, C)')!; // Step 3
+    const retry = timeline.find(s => s.isRetry && s.goal.startsWith('parent'))!;            // Step 5
+
+    // It re-solves Step 3's very subgoal — same label and template, not the
+    // re-entered ancestor's re-numbered subgoals.
+    expect(retry.subgoalLabel).toBe(first.subgoalLabel);
+    expect(retry.subgoalTemplate).toBe('parent(P, C)');
+    // P was bound by an earlier sibling (parent(tom, P)) and that binding is not
+    // undone by backtracking into parent(P, C), so it persists on the redo.
+    expect(retry.subgoalBindings).toEqual(first.subgoalBindings);
+    expect(retry.subgoalBindings?.some(b => b.variable === 'P' && b.value === 'bob')).toBe(true);
   });
 });

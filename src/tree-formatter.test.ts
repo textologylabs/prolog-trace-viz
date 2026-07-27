@@ -266,12 +266,14 @@ describe('formatTimelineAsMermaid - multiple solutions (forest)', () => {
     expect(out).toContain('✓ solution 2: X = wine');
   });
 
-  it('links solutions with a "next solution" edge and no failure/backtrack loop', () => {
+  it('draws a demand-driven backtrack loop: previous solution back to the choice point, then the next solution', () => {
     const { steps, solutions } = build();
     const out = formatTimelineAsMermaid(steps, query, undefined, {}, solutions);
+    // A next-solution redo IS backtracking. The dotted loop unwinds from the
+    // first solution's leaf back to the ① choice point; the thick edge carries on.
+    expect(out).toMatch(/-\.->\|"backtrack to ①"\| /);
     expect(out).toMatch(/==>\|"next solution"\|/);
-    // Enumeration, not failure: no dotted backtrack edge, and never a self-loop.
-    expect(out).not.toContain('-.->');
+    // Never a self-loop.
     expect(out).not.toMatch(/([A-Z]+) -\.->\|[^|]*\| \1/);
   });
 });

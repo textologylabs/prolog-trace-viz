@@ -13,7 +13,7 @@
  * vs a clause's `X`, or `N` recurring across recursive clause instances),
  * disambiguates them with step-indexed labels like `X@2`.
  */
-import { TimelineStep } from './timeline.js';
+import { TimelineStep, stepScope } from './timeline.js';
 import { extractQueryVariables, parseTerm, splitConjuncts, isVariable } from './query.js';
 
 /** How variable names are displayed. */
@@ -110,7 +110,7 @@ export function collectLogicalVars(steps: TimelineStep[], query: string): Logica
     if (!step.clause) continue;
     const text = `${step.clause.head} ${step.clause.body ?? ''}`;
     for (const name of extractVarNames(text)) {
-      push(name, step.stepNumber);
+      push(name, stepScope(step));
     }
   }
 
@@ -201,7 +201,7 @@ function subgoalTemplate(goal: string): string {
  */
 export function clauseCorefClasses(step: TimelineStep, labelMap: LabelMap): SharedVar[] {
   if (!step.clause) return [];
-  const scope = step.stepNumber;
+  const scope = stepScope(step);
   const places = new Map<string, string[]>();
   const add = (name: string, place: string) => {
     const arr = places.get(name) ?? [];
@@ -244,7 +244,7 @@ export function queryHeadLinks(query: string, step: TimelineStep, labelMap: Labe
     if (isVariable(qArg) && isVariable(hArg)) {
       links.push({
         queryVar: labelMap.label(qArg, 'query'),
-        clauseVar: labelMap.label(hArg, step.stepNumber),
+        clauseVar: labelMap.label(hArg, stepScope(step)),
       });
     }
   }
@@ -322,7 +322,7 @@ export function buildColoring(steps: TimelineStep[], query: string): Coloring {
     if (!conj) continue;
     for (let i = 0; i < head.args.length; i++) {
       if (isVariable(conj.args[i]) && isVariable(head.args[i])) {
-        union(varKey(conj.args[i], 'query'), varKey(head.args[i], root.stepNumber));
+        union(varKey(conj.args[i], 'query'), varKey(head.args[i], stepScope(root)));
       }
     }
   }
@@ -337,7 +337,7 @@ export function buildColoring(steps: TimelineStep[], query: string): Coloring {
         if (caller && callee && caller.args.length === callee.args.length) {
           for (let i = 0; i < caller.args.length; i++) {
             if (isVariable(caller.args[i]) && isVariable(callee.args[i])) {
-              union(varKey(caller.args[i], step.stepNumber), varKey(callee.args[i], child.stepNumber));
+              union(varKey(caller.args[i], stepScope(step)), varKey(callee.args[i], stepScope(child)));
             }
           }
         }
@@ -360,7 +360,7 @@ export function buildColoring(steps: TimelineStep[], query: string): Coloring {
       for (const name of new Set(extractVarNames(tmpl))) bump(name);
     }
     for (const [name, count] of places) {
-      if (count >= 2) shared.add(varKey(name, step.stepNumber));
+      if (count >= 2) shared.add(varKey(name, stepScope(step)));
     }
   }
 
@@ -473,10 +473,10 @@ export function buildBindingEnvironment(
 
   const walk = (step: TimelineStep, parentScope: 'query' | number, isRoot: boolean) => {
     const goalScope: 'query' | number = isRoot ? 'query' : parentScope;
-    for (const u of step.unifications) setVal(u.variable, step.stepNumber, u.value, step.stepNumber);
+    for (const u of step.unifications) setVal(u.variable, stepScope(step), u.value, step.stepNumber);
     for (const b of step.resultBindings ?? []) setVal(b.variable, goalScope, b.value, step.stepNumber);
     for (const b of step.subgoalBindings ?? []) setVal(b.variable, goalScope, b.value, b.fromStep);
-    for (const c of step.children) walk(c, step.stepNumber, false);
+    for (const c of step.children) walk(c, stepScope(step), false);
   };
   steps.forEach(s => walk(s, 'query', true));
 
