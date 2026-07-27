@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.4] - 2026-07-27
+
+### Fixed
+- **Step numbering skipped a number on backtracking.** An ancestor re-entry (a clause re-`EXIT`ing the same instance on backtracking) was consuming a step number even though the call tree never draws it — so `grandparent(tom, GC) -n 2` numbered the re-solved goal ⑤ with no ④ anywhere, a jump that read as a bug. An ancestor re-entry is not a genuine execution step, so it now reuses the number (and scope) of the instance it re-satisfies and consumes none of its own. Genuine steps stay consecutive (`①②③④`), and the re-entry shows no `Step N:` header in the timeline — the *"Succeeds again (Step N re-satisfied)"* line already names what re-solved. Real recursion is unaffected: its genuinely distinct instances keep consecutive numbers and their `@N` scope tags.
+
 ## [2.10.3] - 2026-07-27
 
 ### Fixed
