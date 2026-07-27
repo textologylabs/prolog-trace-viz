@@ -4,22 +4,39 @@ import {
   collectLogicalVars,
   computeLabels,
   buildLabelMap,
+  clauseCorefClasses,
+  queryHeadLinks,
   LogicalVar,
 } from './coref.js';
 import { TimelineStep } from './timeline.js';
 
 /** Minimal TimelineStep factory for tests. */
-function step(stepNumber: number, head: string, body: string, children: TimelineStep[] = []): TimelineStep {
+function step(
+  stepNumber: number,
+  head: string,
+  body: string,
+  children: TimelineStep[] = [],
+  subgoals: Array<{ label: string; goal: string }> = [],
+): TimelineStep {
   return {
     stepNumber,
-    port: 'exit',
+    port: 'merged',
     level: 1,
     goal: head,
     clause: { head, body, line: stepNumber },
     unifications: [],
-    subgoals: [],
+    subgoals,
     children,
   };
+}
+
+/** The sister_of clause step, with its body decomposed into labeled subgoals. */
+function sisterStep(): TimelineStep {
+  return step(1, 'sister_of(X, Y)', 'female(X), parents(X, M, F), parents(Y, M, F)', [], [
+    { label: '[1.1]', goal: 'female(X)' },
+    { label: '[1.2]', goal: 'parents(X, M, F)' },
+    { label: '[1.3]', goal: 'parents(Y, M, F)' },
+  ]);
 }
 
 describe('extractVarNames', () => {
@@ -118,6 +135,44 @@ describe('computeLabels', () => {
     expect(label('X', 1)).toBe('X@1');
     expect(label('Y', 1)).toBe('Y@1');   // tagged even though not overloaded
     expect(label('M', 1)).toBe('M@1');
+  });
+});
+
+describe('clauseCorefClasses', () => {
+  it('finds variables shared across a clause\'s goals, with labels', () => {
+    const s = sisterStep();
+    const map = buildLabelMap([s], 'sister_of(alice, X)', 'auto');
+    const byLabel = Object.fromEntries(clauseCorefClasses(s, map).map(v => [v.label, v.places]));
+    expect(byLabel['X@1']).toEqual(['head', '[1.1]', '[1.2]']); // clause X, tagged
+    expect(byLabel['Y']).toEqual(['head', '[1.3]']);
+    expect(byLabel['M']).toEqual(['[1.2]', '[1.3]']);            // same mother
+    expect(byLabel['F']).toEqual(['[1.2]', '[1.3]']);            // same father
+  });
+
+  it('omits variables that occur in only one place', () => {
+    const s = step(1, 'p(X)', 'q(X), r(Y)', [], [
+      { label: '[1.1]', goal: 'q(X)' },
+      { label: '[1.2]', goal: 'r(Y)' },
+    ]);
+    const map = buildLabelMap([s], 'p(a)', 'auto');
+    const labels = clauseCorefClasses(s, map).map(v => v.label);
+    expect(labels).toContain('X');   // head + [1.1]
+    expect(labels).not.toContain('Y'); // only [1.2]
+  });
+});
+
+describe('queryHeadLinks', () => {
+  it('identifies query variables with head variables positionally', () => {
+    const s = sisterStep();
+    const map = buildLabelMap([s], 'sister_of(alice, X)', 'auto');
+    // query arg2 X ≡ head arg2 Y; arg1 is the ground atom alice, no link.
+    expect(queryHeadLinks('sister_of(alice, X)', s, map)).toEqual([{ queryVar: 'X', clauseVar: 'Y' }]);
+  });
+
+  it('returns no links when the query argument is ground', () => {
+    const s = sisterStep();
+    const map = buildLabelMap([s], 'sister_of(alice, edward)', 'auto');
+    expect(queryHeadLinks('sister_of(alice, edward)', s, map)).toEqual([]);
   });
 });
 

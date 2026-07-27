@@ -8,7 +8,7 @@
 
 import { TimelineStep } from './timeline.js';
 import { DebugFlag } from './cli.js';
-import { LabelMode, LabelMap, buildLabelMap } from './coref.js';
+import { LabelMode, LabelMap, buildLabelMap, clauseCorefClasses, queryHeadLinks } from './coref.js';
 
 export interface TimelineFormatterOptions {
   debugFlags?: Set<DebugFlag>;
@@ -18,6 +18,8 @@ export interface TimelineFormatterOptions {
   labelMode?: LabelMode;
   /** The original query — needed to scope the query's own variables. */
   query?: string;
+  /** Coreference detail level: 0 off (default), 1 callout, … */
+  corefLevel?: number;
 }
 
 /**
@@ -29,21 +31,36 @@ type Relabel = (text: string, scope: 'query' | number) => string;
 
 const IDENTITY_RELABEL: Relabel = (text) => text;
 
+/** Rendering context threaded through the formatter. */
+interface FormatCtx {
+  relabel: Relabel;
+  labelMap: LabelMap | null;
+  corefLevel: number;
+  query: string;
+}
+
+const INERT_CTX: FormatCtx = { relabel: IDENTITY_RELABEL, labelMap: null, corefLevel: 0, query: '' };
+
 /**
- * Build the relabeling function for a trace. Returns the identity function
- * (no-op) in `source` mode, or in `auto` mode when no name is overloaded — so
- * the common case is untouched.
+ * Build the rendering context for a trace. The relabel function is the identity
+ * (no-op, byte-identical output) in `source` mode or in `auto` mode when no
+ * name is overloaded. The label map is still built whenever a query is present
+ * so the coreference callout can scope names in any mode.
  */
-function buildRelabel(steps: TimelineStep[], options: TimelineFormatterOptions): Relabel {
+function buildFormatCtx(steps: TimelineStep[], options: TimelineFormatterOptions): FormatCtx {
   const mode = options.labelMode;
-  if (!mode || mode === 'source' || !options.query) return IDENTITY_RELABEL;
-  const map: LabelMap = buildLabelMap(steps, options.query, mode);
-  const active = mode === 'full' || map.overloaded.size > 0;
-  if (!active) return IDENTITY_RELABEL;
+  const corefLevel = options.corefLevel ?? 0;
+  const query = options.query ?? '';
+  if (!mode || !query) return { ...INERT_CTX, corefLevel, query };
+
+  const map = buildLabelMap(steps, query, mode);
+  const active = mode !== 'source' && (mode === 'full' || map.overloaded.size > 0);
   // Match maximal identifiers so an underscore inside a lowercase atom
   // (`sister_of`) is matched whole; `label` leaves non-variable tokens alone.
-  return (text, scope) =>
-    text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (tok) => map.label(tok, scope));
+  const relabel: Relabel = active
+    ? (text, scope) => text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (tok) => map.label(tok, scope))
+    : IDENTITY_RELABEL;
+  return { relabel, labelMap: map, corefLevel, query };
 }
 
 /**
@@ -60,7 +77,7 @@ export function formatTimeline(steps: TimelineStep[], options: TimelineFormatter
   const lines: string[] = [];
   const showDividers = (options.solutionCount ?? 1) > 1;
   let shownSolution: number | undefined;
-  const relabel = buildRelabel(steps, options);
+  const ctx = buildFormatCtx(steps, options);
 
   for (const step of steps) {
     if (showDividers && step.solutionIndex !== undefined && step.solutionIndex !== shownSolution) {
@@ -70,7 +87,7 @@ export function formatTimeline(steps: TimelineStep[], options: TimelineFormatter
       shownSolution = step.solutionIndex;
     }
     // Root steps: the goal header shows the query's own variables.
-    lines.push(...formatStepNested(step, 0, options, relabel, 'query'));
+    lines.push(...formatStepNested(step, 0, options, ctx, 'query'));
     lines.push('');
   }
 
@@ -87,12 +104,13 @@ function formatStepNested(
   step: TimelineStep,
   depth: number,
   options: TimelineFormatterOptions,
-  relabel: Relabel = IDENTITY_RELABEL,
+  ctx: FormatCtx = INERT_CTX,
   parentScope: 'query' | number = 'query',
 ): string[] {
   const lines: string[] = [];
   const indent = '│  '.repeat(depth);
   const showInternalVars = hasDebugFlag(options, 'internal-vars');
+  const relabel = ctx.relabel;
   // The goal header is written in the *caller's* variable names (query scope at
   // the root, the enclosing clause's scope in a child). The clause line,
   // unifications and subgoals are written in *this* step's clause scope.
@@ -167,12 +185,18 @@ function formatStepNested(
       break;
   }
 
+  // Coreference callout (--coref:1): name the identity classes for this clause
+  // — the query↔head channel (root only) and the variables shared across goals.
+  if (ctx.corefLevel >= 1 && ctx.labelMap && step.clause && (step.port === 'merged' || step.port === 'call')) {
+    lines.push(...formatCorefCallout(step, depth, indent, ctx));
+  }
+
   // Render children (nested inside this step). A child's goal header is written
   // in this step's clause scope, so pass stepNumber as the child's parentScope.
   if (step.children.length > 0) {
     lines.push(`${indent}│  `);
     for (const child of step.children) {
-      lines.push(...formatStepNested(child, depth + 1, options, relabel, step.stepNumber));
+      lines.push(...formatStepNested(child, depth + 1, options, ctx, step.stepNumber));
     }
   }
 
@@ -194,6 +218,27 @@ function formatStepNested(
   
   lines.push(`${indent}└─`);
   
+  return lines;
+}
+
+/**
+ * Format the coreference callout for a clause application (--coref:1): the
+ * query↔head identifications (root only) and the variables shared across the
+ * clause's goals. Names are shown with their scope-correct labels.
+ */
+function formatCorefCallout(step: TimelineStep, depth: number, indent: string, ctx: FormatCtx): string[] {
+  const map = ctx.labelMap!;
+  const shared = clauseCorefClasses(step, map);
+  const links = depth === 0 ? queryHeadLinks(ctx.query, step, map) : [];
+  if (shared.length === 0 && links.length === 0) return [];
+
+  const lines: string[] = [`${indent}│  Coreferences:`];
+  for (const link of links) {
+    lines.push(`${indent}│    ${link.queryVar} ≡ ${link.clauseVar}  (query ↔ clause)`);
+  }
+  for (const s of shared) {
+    lines.push(`${indent}│    ${s.label} — shared by ${s.places.join(', ')}`);
+  }
   return lines;
 }
 
