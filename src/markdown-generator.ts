@@ -8,7 +8,7 @@ import { formatTimeline, TimelineFormatterOptions } from './timeline-formatter.j
 import { formatTimelineAsMermaid, TreeFormatterOptions } from './tree-formatter.js';
 
 import { DebugFlag } from './cli.js';
-import { LabelMode, buildColoring, buildLabelMap, buildBindingEnvironment } from './coref.js';
+import { LabelMode, buildColoringBySolution, buildLabelMap, buildBindingEnvironment } from './coref.js';
 
 export interface ClauseDefinition {
   line: number;
@@ -175,7 +175,7 @@ function generateTimelineSection(context: MarkdownContext): string {
     // Colour layer (--coref:2): the formatter already emitted HTML-escaped text
     // with variable <span>s, so do not re-escape. Emit the theme-aware <style>
     // first (outside the <pre>).
-    const coloring = buildColoring(context.timeline, context.query);
+    const coloring = buildColoringBySolution(context.timeline, context.query);
     lines.push(coloring.css());
     lines.push('<pre style="line-height: 1.15">');
     lines.push(timelineText);
@@ -211,22 +211,35 @@ function escapeHtml(text: string): string {
  */
 function generateBindingPanel(context: MarkdownContext): string {
   const labelMap = buildLabelMap(context.timeline, context.query, context.labelMode!);
-  const coloring = buildColoring(context.timeline, context.query);
-  const rows = buildBindingEnvironment(context.timeline, context.query, labelMap, coloring);
+  const bySolution = buildColoringBySolution(context.timeline, context.query);
+
+  // Group top-level steps by solution — coreference (and its colouring) is
+  // confined to a single proof, so each solution gets its own sub-table.
+  const groups = new Map<number, TimelineStep[]>();
+  for (const s of context.timeline) {
+    const idx = s.solutionIndex ?? 1;
+    (groups.get(idx) ?? groups.set(idx, []).get(idx)!).push(s);
+  }
+  const multi = groups.size > 1;
 
   const lines: string[] = ['## Variable Bindings', ''];
-  if (rows.length === 0) {
-    lines.push('_No variables were bound._');
-    return lines.join('\n');
+  let any = false;
+  for (const [idx, group] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
+    const rows = buildBindingEnvironment(group, context.query, labelMap, bySolution.forSolution(idx));
+    if (rows.length === 0) continue;
+    any = true;
+    if (multi) lines.push(`**Solution ${idx}**`, '');
+    lines.push('| Variable | Binding | Bound at |');
+    lines.push('|----------|---------|----------|');
+    for (const row of rows) {
+      const names = row.labels.join(' ≡ ');
+      const cell = row.colourId !== null ? `<span class="ptv-c${row.colourId}">${names}</span>` : names;
+      lines.push(`| ${cell} | \`${row.value}\` | Step ${row.whereStep} |`);
+    }
+    lines.push('');
   }
-  lines.push('| Variable | Binding | Bound at |');
-  lines.push('|----------|---------|----------|');
-  for (const row of rows) {
-    const names = row.labels.join(' ≡ ');
-    const cell = row.colourId !== null ? `<span class="ptv-c${row.colourId}">${names}</span>` : names;
-    lines.push(`| ${cell} | \`${row.value}\` | Step ${row.whereStep} |`);
-  }
-  return lines.join('\n');
+  if (!any) lines.push('_No variables were bound._');
+  return lines.join('\n').trimEnd();
 }
 
 /**

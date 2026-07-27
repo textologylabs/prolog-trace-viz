@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-07-27
+
+### Changed
+- **Coreference colour-linking is now confined to a single solution.** Previously the shared query variable bridged a clause's variables across *every* solution into one colour class — so in a multi-solution trace the same clause variable from two different proofs (holding different values) shared a colour, which read as spurious linkage. Colouring is now computed per solution (the palette resets each pass, small-multiple style; the `──── Solution N ────` dividers keep passes separate). Bonus: structural roles now colour consistently across passes (the recursion/​instance variable takes the same hue in every proof). The `--coref:3` binding panel likewise splits per solution. Single-solution traces are unaffected.
+
 ## [2.10.0] - 2026-07-27
 
 ### Added

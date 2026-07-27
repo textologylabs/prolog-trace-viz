@@ -8,7 +8,7 @@
 
 import { TimelineStep } from './timeline.js';
 import { DebugFlag } from './cli.js';
-import { LabelMode, LabelMap, Coloring, buildLabelMap, buildColoring, clauseCorefClasses, queryHeadLinks } from './coref.js';
+import { LabelMode, LabelMap, Coloring, buildLabelMap, buildColoringBySolution, clauseCorefClasses, queryHeadLinks } from './coref.js';
 
 export interface TimelineFormatterOptions {
   debugFlags?: Set<DebugFlag>;
@@ -60,46 +60,60 @@ const INERT_CTX: FormatCtx = { relabel: IDENTITY_RELABEL, labelMap: null, corefL
 const VAR_TOKEN = /[A-Za-z_][A-Za-z0-9_]*/g;
 
 /**
- * Build the rendering context for a trace. The relabel function is the identity
- * (no-op, byte-identical output) in `source` mode or in `auto` mode when no
- * name is overloaded. When colour is active (--coref:2) relabel additionally
- * HTML-escapes and wraps each variable in a `<span>` for its coreference class.
- * The label map is still built whenever a query is present so the coreference
- * callout can scope names in any mode.
+ * Build a factory that yields the rendering context for a given solution index.
+ * Labeling is global (step-indexed `X@N`), but colour is confined to a single
+ * solution — so the colour relabel is selected per solution. The relabel is the
+ * identity (no-op, byte-identical output) in `source` mode or in `auto` mode
+ * when no name is overloaded. When colour is active (--coref:2) relabel
+ * additionally HTML-escapes and wraps each variable in a `<span>` for its
+ * coreference class within that solution.
  */
-function buildFormatCtx(steps: TimelineStep[], options: TimelineFormatterOptions): FormatCtx {
+function buildCtxFactory(steps: TimelineStep[], options: TimelineFormatterOptions): (solutionIndex: number) => FormatCtx {
   const mode = options.labelMode;
   const corefLevel = options.corefLevel ?? 0;
   const query = options.query ?? '';
-  if (!mode || !query) return { ...INERT_CTX, corefLevel, query };
+  if (!mode || !query) {
+    const ctx = { ...INERT_CTX, corefLevel, query };
+    return () => ctx;
+  }
 
   const map = buildLabelMap(steps, query, mode);
 
-  // Colour layer: escape + span-wrap each variable by its coreference class.
+  // Colour layer: escape + span-wrap each variable by its coreference class,
+  // using the colouring for the solution the step belongs to.
   if (corefLevel >= 2) {
-    const coloring: Coloring = buildColoring(steps, query);
-    const relabel: Relabel = (text, scope) => {
-      let out = '';
-      let last = 0;
-      for (const m of text.matchAll(VAR_TOKEN)) {
-        out += escapeHtml(text.slice(last, m.index));
-        const tok = m[0];
-        const label = escapeHtml(map.label(tok, scope));
-        const cid = coloring.classId(tok, scope);
-        out += cid !== null ? `<span class="ptv-c${cid}">${label}</span>` : label;
-        last = m.index + tok.length;
-      }
-      out += escapeHtml(text.slice(last));
-      return out;
+    const bySolution = buildColoringBySolution(steps, query);
+    const ctxCache = new Map<number, FormatCtx>();
+    return (solutionIndex: number): FormatCtx => {
+      const cached = ctxCache.get(solutionIndex);
+      if (cached) return cached;
+      const coloring: Coloring = bySolution.forSolution(solutionIndex);
+      const relabel: Relabel = (text, scope) => {
+        let out = '';
+        let last = 0;
+        for (const m of text.matchAll(VAR_TOKEN)) {
+          out += escapeHtml(text.slice(last, m.index));
+          const tok = m[0];
+          const label = escapeHtml(map.label(tok, scope));
+          const cid = coloring.classId(tok, scope);
+          out += cid !== null ? `<span class="ptv-c${cid}">${label}</span>` : label;
+          last = m.index + tok.length;
+        }
+        out += escapeHtml(text.slice(last));
+        return out;
+      };
+      const ctx = { relabel, labelMap: map, corefLevel, query };
+      ctxCache.set(solutionIndex, ctx);
+      return ctx;
     };
-    return { relabel, labelMap: map, corefLevel, query };
   }
 
   const active = mode !== 'source' && (mode === 'full' || map.overloaded.size > 0);
   const relabel: Relabel = active
     ? (text, scope) => text.replace(VAR_TOKEN, (tok) => map.label(tok, scope))
     : IDENTITY_RELABEL;
-  return { relabel, labelMap: map, corefLevel, query };
+  const ctx = { relabel, labelMap: map, corefLevel, query };
+  return () => ctx;
 }
 
 /**
@@ -116,7 +130,7 @@ export function formatTimeline(steps: TimelineStep[], options: TimelineFormatter
   const lines: string[] = [];
   const showDividers = (options.solutionCount ?? 1) > 1;
   let shownSolution: number | undefined;
-  const ctx = buildFormatCtx(steps, options);
+  const ctxFor = buildCtxFactory(steps, options);
 
   for (const step of steps) {
     if (showDividers && step.solutionIndex !== undefined && step.solutionIndex !== shownSolution) {
@@ -125,8 +139,9 @@ export function formatTimeline(steps: TimelineStep[], options: TimelineFormatter
       lines.push('');
       shownSolution = step.solutionIndex;
     }
-    // Root steps: the goal header shows the query's own variables.
-    lines.push(...formatStepNested(step, 0, options, ctx, 'query'));
+    // Root steps: the goal header shows the query's own variables. Colour is
+    // scoped to this step's solution, so pick that solution's context.
+    lines.push(...formatStepNested(step, 0, options, ctxFor(step.solutionIndex ?? 1), 'query'));
     lines.push('');
   }
 
