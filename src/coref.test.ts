@@ -7,6 +7,7 @@ import {
   clauseCorefClasses,
   queryHeadLinks,
   buildColoring,
+  buildColoringBySolution,
   buildBindingEnvironment,
   LogicalVar,
 } from './coref.js';
@@ -208,6 +209,25 @@ describe('buildColoring (coreference classes)', () => {
     expect(css).toContain('<style>');
     expect(css).toContain('.ptv-c0{color:');
     expect(css).toContain('@media (prefers-color-scheme: dark)');
+  });
+});
+
+describe('buildColoringBySolution (colour confined to one pass)', () => {
+  it('colours each solution independently — one pass does not colour another\'s vars', () => {
+    // Two clause instances of the same predicate, one per solution.
+    const sol1 = step(1, 'p(X, Y)', 'q(X, Y)', [], [{ label: '[1.1]', goal: 'q(X, Y)' }]);
+    sol1.solutionIndex = 1;
+    const sol2 = step(5, 'p(X, Y)', 'q(X, Y)', [], [{ label: '[5.1]', goal: 'q(X, Y)' }]);
+    sol2.solutionIndex = 2;
+
+    const bs = buildColoringBySolution([sol1, sol2], 'p(a, R)');
+
+    // Solution 1's colouring knows step-1 variables, not step-5 ones.
+    expect(bs.forSolution(1).classId('Y', 1)).not.toBeNull();
+    expect(bs.forSolution(1).classId('Y', 5)).toBeNull();
+    // Solution 2's colouring is the mirror image.
+    expect(bs.forSolution(2).classId('Y', 5)).not.toBeNull();
+    expect(bs.forSolution(2).classId('Y', 1)).toBeNull();
   });
 });
 

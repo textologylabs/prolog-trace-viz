@@ -272,6 +272,15 @@ export interface Coloring {
   css(): string;
   /** True if some coreference classes were left uncoloured (palette exhausted). */
   capped: boolean;
+  /** How many palette colours this coloring uses. */
+  usedCount: number;
+}
+
+/** The palette classes' <style> block for the first `n` colours, theme-aware. */
+function paletteCss(n: number): string {
+  const light = Array.from({ length: n }, (_, i) => `.ptv-c${i}{color:${PALETTE_LIGHT[i]}}`).join('');
+  const dark = Array.from({ length: n }, (_, i) => `.ptv-c${i}{color:${PALETTE_DARK[i]}}`).join('');
+  return `<style>\n${light}\n@media (prefers-color-scheme: dark){${dark}}\n</style>`;
 }
 
 const varKey = (name: string, scope: 'query' | number) => `${name}@@${scope}`;
@@ -380,11 +389,50 @@ export function buildColoring(steps: TimelineStep[], query: string): Coloring {
   return {
     classId: (name, scope) => colourOf.get(varKey(name, scope)) ?? null,
     capped,
-    css() {
-      const light = Array.from({ length: usedCount }, (_, i) => `.ptv-c${i}{color:${PALETTE_LIGHT[i]}}`).join('');
-      const dark = Array.from({ length: usedCount }, (_, i) => `.ptv-c${i}{color:${PALETTE_DARK[i]}}`).join('');
-      return `<style>\n${light}\n@media (prefers-color-scheme: dark){${dark}}\n</style>`;
-    },
+    usedCount,
+    css: () => paletteCss(usedCount),
+  };
+}
+
+/** A per-solution colouring: coreference classes are confined to one proof. */
+export interface SolutionColoring {
+  /** The colouring for a given solution index (1-based). */
+  forSolution(index: number): Coloring;
+  /** Aggregate `<style>` block covering every solution's used colours. */
+  css(): string;
+  /** True if any solution left coreference classes uncoloured. */
+  capped: boolean;
+}
+
+/**
+ * Build coreference colourings **per solution**. Each solution is a separate
+ * proof, so colour-linking is confined to it — the query variable does not
+ * bridge one solution's clause variables to another's. The palette resets per
+ * solution (small-multiple style); the `──── Solution N ────` dividers keep the
+ * passes visually separate.
+ */
+export function buildColoringBySolution(steps: TimelineStep[], query: string): SolutionColoring {
+  const groups = new Map<number, TimelineStep[]>();
+  for (const s of steps) {
+    const idx = s.solutionIndex ?? 1;
+    (groups.get(idx) ?? groups.set(idx, []).get(idx)!).push(s);
+  }
+
+  const bySolution = new Map<number, Coloring>();
+  for (const [idx, group] of groups) bySolution.set(idx, buildColoring(group, query));
+
+  const empty = buildColoring([], query);
+  let maxUsed = 0;
+  let capped = false;
+  for (const c of bySolution.values()) {
+    maxUsed = Math.max(maxUsed, c.usedCount);
+    capped = capped || c.capped;
+  }
+
+  return {
+    forSolution: (idx) => bySolution.get(idx) ?? bySolution.get(1) ?? empty,
+    capped,
+    css: () => paletteCss(maxUsed),
   };
 }
 
