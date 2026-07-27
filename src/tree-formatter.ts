@@ -132,9 +132,26 @@ export function formatTimelineAsMermaid(
   // one's own subtree beneath it. Returns the last sibling's id (the point the
   // flow continues from). parentScope is the caller's variable scope: 'query'
   // at the top, the enclosing step's number for nested subgoals.
+  // The last node emitted for each solution, so a ✓ leaf hangs off the goal
+  // that actually established that solution (not a synthesized ancestor re-exit).
+  const lastIdBySolution = new Map<number, string>();
+
   const walk = (list: TimelineStep[], parentId: string, parentScope: 'query' | number): string | null => {
     let prevId: string | null = null;
     for (const step of list) {
+      // An ancestor re-entry is a consequential *second EXIT*, not a choice
+      // point of its own — the goal never received a REDO. Don't draw it as a
+      // node; thread the real re-solution beneath it into the current flow, so
+      // the solution hangs off the goal that actually backtracked.
+      if (step.isAncestorReentry) {
+        const childLast = walk(step.children, prevId ?? parentId, step.stepNumber);
+        if (childLast) {
+          prevId = childLast;
+          if (step.solutionIndex !== undefined) lastIdBySolution.set(step.solutionIndex, childLast);
+        }
+        continue;
+      }
+
       const id = nextId();
       idOfStep.set(step.stepNumber, id);
       nodes.push(`${id}[${labelForStep(step, relabel, parentScope)}]`);
@@ -145,16 +162,14 @@ export function formatTimelineAsMermaid(
         : undefined;
 
       if (origin) {
-        // Backtracking: control returns from the failure that triggered it to
-        // the choice point, which then yields this retry. The builder records
-        // the actual trigger; fall back to the preceding step only if it didn't.
-        const deadEnd =
-          (step.backtrackFromStep !== undefined ? idOfStep.get(step.backtrackFromStep) : undefined)
-          ?? idOfStep.get(step.stepNumber - 1) ?? prevId ?? parentId;
-        // A distinct failure returns to the choice point via a dotted edge. When
-        // the retry is enumeration-driven (asking the goal for its next solution,
-        // no failure), there is no dead end — skip the edge rather than loop it
-        // back onto the origin.
+        // The thick "next solution" edge shows Prolog backtracking into the
+        // choice point (whether a failure or a demand for the next answer drove
+        // it). The dotted "backtrack to Ⓝ" edge is only informative when a
+        // *distinct* dead end elsewhere — a genuine failure — triggered the
+        // unwind; enumeration-driven re-solutions have no such dead end.
+        const deadEnd = step.backtrackFromStep !== undefined
+          ? idOfStep.get(step.backtrackFromStep)
+          : undefined;
         if (deadEnd && deadEnd !== origin) {
           edges.push(`${deadEnd} -.->|"backtrack to ${toCircledNumber(step.retryOfStep!)}"| ${origin}`);
         }
@@ -163,6 +178,9 @@ export function formatTimelineAsMermaid(
         edges.push(`${prevId ?? parentId} --> ${id}`);
       }
 
+      // Record before recursing so a deeper node of the same solution wins —
+      // the ✓ leaf should hang off the innermost goal that established it.
+      if (step.solutionIndex !== undefined) lastIdBySolution.set(step.solutionIndex, id);
       walk(step.children, id, step.stepNumber);
       prevId = id;
     }
@@ -172,14 +190,10 @@ export function formatTimelineAsMermaid(
   const lastId = walk(steps, rootId, 'query');
 
   if (solutions && solutions.length > 1) {
-    // A forest: one ✓ leaf per solution, hung off the last top-level step of
-    // that solution's segment. Turns the flow into the full search tree.
+    // A forest: one ✓ leaf per solution, hung off the last node that solution
+    // actually reached. Turns the flow into the full search tree.
     for (const sol of solutions) {
-      let anchor: TimelineStep | undefined;
-      for (const step of steps) {
-        if (step.solutionIndex === sol.index) anchor = step;
-      }
-      const anchorId = anchor ? idOfStep.get(anchor.stepNumber) : lastId;
+      const anchorId = lastIdBySolution.get(sol.index) ?? lastId;
       if (!anchorId) continue;
       const termId = nextId();
       const label = sol.bindings.length

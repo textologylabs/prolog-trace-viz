@@ -659,3 +659,31 @@ describe('Nested timeline structure', () => {
     expect(nestedTimeline[0].children[1].goal).toBe('t(1+1+0+1,Z)');
   });
 });
+
+describe('Backtracking - ancestor re-exit is not a choice point', () => {
+  // ?- grandparent(tom, GC).  Two solutions (ann, pat). Only parent(bob, C)
+  // gets a REDO — grandparent has a single clause and merely re-EXITs as a
+  // consequence, so it must NOT be treated as a choice point that backtracked.
+  const events: TraceEvent[] = [
+    { port: 'call', level: 38, goal: 'grandparent(tom,_1)', predicate: 'grandparent/2' },
+    { port: 'call', level: 39, goal: 'parent(tom,_2)', predicate: 'parent/2' },
+    { port: 'exit', level: 39, goal: 'parent(tom,bob)', predicate: 'parent/2', clause: { head: 'parent(tom, bob)', body: 'true', line: 2 } },
+    { port: 'call', level: 39, goal: 'parent(bob,_3)', predicate: 'parent/2' },
+    { port: 'exit', level: 39, goal: 'parent(bob,ann)', predicate: 'parent/2', clause: { head: 'parent(bob, ann)', body: 'true', line: 4 } },
+    { port: 'exit', level: 38, goal: 'grandparent(tom,ann)', predicate: 'grandparent/2', clause: { head: 'grandparent(G, C)', body: 'parent(G, P), parent(P, C)', line: 9 } },
+    { port: 'redo', level: 39, goal: 'parent(bob,_4)', predicate: 'parent/2' },
+    { port: 'exit', level: 39, goal: 'parent(bob,pat)', predicate: 'parent/2', clause: { head: 'parent(bob, pat)', body: 'true', line: 5 } },
+    { port: 'exit', level: 38, goal: 'grandparent(tom,pat)', predicate: 'grandparent/2', clause: { head: 'grandparent(G, C)', body: 'parent(G, P), parent(P, C)', line: 9 } },
+  ];
+
+  it('flags the grandparent re-exit as an ancestor re-entry, not the parent redo', () => {
+    const timeline = flattenTimeline(new TimelineBuilder(events).build());
+    const gpReentry = timeline.find(s => s.isRetry && s.goal.startsWith('grandparent'));
+    const parentRetry = timeline.find(s => s.isRetry && s.goal.startsWith('parent'));
+
+    expect(gpReentry).toBeDefined();
+    expect(gpReentry!.isAncestorReentry).toBe(true);   // consequential re-success
+    expect(parentRetry).toBeDefined();
+    expect(parentRetry!.isAncestorReentry).toBeFalsy(); // the real choice point
+  });
+});

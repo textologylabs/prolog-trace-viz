@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.2] - 2026-07-27
+
+### Fixed
+- **Backtracking was attributed to goals that never backtracked.** When enumerating solutions, a goal with a single clause (e.g. `grandparent/2`) re-`EXIT`s a second time purely because a goal *beneath* it re-solved — it never receives a `REDO` of its own. The builder was treating every such re-exit as a choice point, so the call tree drew a spurious `next solution` loop and a misplaced `backtrack to Ⓝ` arrow on it, and the timeline labelled it `REDO … Retry`. Now only the goal that actually received the `REDO` (the real choice point) is rendered as backtracking; ancestor re-exits are shown as *"succeeds again"* consequences. The call tree omits the synthesized ancestor node entirely and hangs each `✓` solution off the goal that established it, so a multi-solution diagram shows one choice point with its answers instead of a tangle. Failure-driven backtracking (e.g. `likes(mary,X), likes(john,X)`) is unchanged — its `✗ fail` still drives a real dotted `backtrack` arrow.
+- **The dotted `backtrack to Ⓝ` arrow no longer manufactures a dead end.** It is drawn only when a genuine failure triggered the unwind; enumeration-driven re-solutions rely on the `next solution` edge alone.
+
 ## [2.10.1] - 2026-07-27
 
 ### Changed

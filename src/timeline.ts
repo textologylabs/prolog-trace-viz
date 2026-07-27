@@ -38,6 +38,11 @@ export interface TimelineStep {
   isRetry?: boolean;        // REDO: this step re-enters a goal that already succeeded
   retryOfStep?: number;     // For retry steps: the step number of the solution being re-entered
   backtrackFromStep?: number; // For retry steps: the failure that triggered the backtracking
+  // True when this retry is only a consequence of a descendant re-solving: the
+  // goal never received a REDO of its own (no choice point), it just EXITs a
+  // second time. Only the *origin* retry — the goal Prolog actually backtracked
+  // into — is a real choice point; ancestors merely re-succeed.
+  isAncestorReentry?: boolean;
   solutionIndex?: number;   // Which enumerated solution's work this step belongs to (1-based)
   retryRejected?: Array<{ variable: string; value: string }>; // The bindings backtracking undid
   children: TimelineStep[]; // Nested child steps
@@ -409,7 +414,11 @@ export class TimelineBuilder {
 
     for (const ancestor of ancestors.reverse()) {
       this.dropExitedStep(ancestor);
-      this.pushRetryStep(ancestor, ancestor.goal);
+      const step = this.pushRetryStep(ancestor, ancestor.goal);
+      // This ancestor did not receive a REDO of its own — it only re-EXITs as a
+      // consequence of the origin re-solving. Mark it so the renderer does not
+      // draw it as a choice point that backtracked.
+      step.isAncestorReentry = true;
     }
 
     this.pushRetryStep(origin, event.goal);
