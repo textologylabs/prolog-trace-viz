@@ -6,6 +6,7 @@ import {
   buildLabelMap,
   clauseCorefClasses,
   queryHeadLinks,
+  buildColoring,
   LogicalVar,
 } from './coref.js';
 import { TimelineStep } from './timeline.js';
@@ -173,6 +174,39 @@ describe('queryHeadLinks', () => {
     const s = sisterStep();
     const map = buildLabelMap([s], 'sister_of(alice, edward)', 'auto');
     expect(queryHeadLinks('sister_of(alice, edward)', s, map)).toEqual([]);
+  });
+});
+
+describe('buildColoring (coreference classes)', () => {
+  it('gives the query variable and the head variable it unifies with the SAME colour', () => {
+    const s = sisterStep();
+    const c = buildColoring([s], 'sister_of(alice, X)');
+    // query X ≡ clause Y (unified through the head) → one coreference class.
+    expect(c.classId('X', 'query')).not.toBeNull();
+    expect(c.classId('X', 'query')).toBe(c.classId('Y', 1));
+  });
+
+  it('gives distinct variables distinct colours', () => {
+    const s = sisterStep();
+    const c = buildColoring([s], 'sister_of(alice, X)');
+    const cX1 = c.classId('X', 1);   // clause X (the false friend)
+    const cQ = c.classId('X', 'query');
+    const cM = c.classId('M', 1);
+    const cF = c.classId('F', 1);
+    // all present and mutually distinct
+    const ids = [cQ, cX1, cM, cF];
+    expect(ids.every(v => v !== null)).toBe(true);
+    expect(new Set(ids).size).toBe(4);
+  });
+
+  it('emits a theme-aware style block for the used classes and is not capped here', () => {
+    const s = sisterStep();
+    const c = buildColoring([s], 'sister_of(alice, X)');
+    expect(c.capped).toBe(false);
+    const css = c.css();
+    expect(css).toContain('<style>');
+    expect(css).toContain('.ptv-c0{color:');
+    expect(css).toContain('@media (prefers-color-scheme: dark)');
   });
 });
 

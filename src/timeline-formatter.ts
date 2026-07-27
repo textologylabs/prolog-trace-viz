@@ -8,7 +8,7 @@
 
 import { TimelineStep } from './timeline.js';
 import { DebugFlag } from './cli.js';
-import { LabelMode, LabelMap, buildLabelMap, clauseCorefClasses, queryHeadLinks } from './coref.js';
+import { LabelMode, LabelMap, Coloring, buildLabelMap, buildColoring, clauseCorefClasses, queryHeadLinks } from './coref.js';
 
 export interface TimelineFormatterOptions {
   debugFlags?: Set<DebugFlag>;
@@ -18,8 +18,22 @@ export interface TimelineFormatterOptions {
   labelMode?: LabelMode;
   /** The original query — needed to scope the query's own variables. */
   query?: string;
-  /** Coreference detail level: 0 off (default), 1 callout, … */
+  /** Coreference detail level: 0 off (default), 1 callout, 2 +colour, … */
   corefLevel?: number;
+}
+
+/**
+ * When colour is active the formatter emits HTML (variable `<span>`s), so it
+ * escapes text itself and the generator must not re-escape. Escapes the three
+ * metacharacters significant inside a <pre>.
+ */
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** True if the formatter's output is already HTML-escaped (colour is active). */
+export function timelineEmitsHtml(steps: TimelineStep[], options: TimelineFormatterOptions): boolean {
+  return (options.corefLevel ?? 0) >= 2 && !!options.query && !!options.labelMode;
 }
 
 /**
@@ -41,11 +55,17 @@ interface FormatCtx {
 
 const INERT_CTX: FormatCtx = { relabel: IDENTITY_RELABEL, labelMap: null, corefLevel: 0, query: '' };
 
+// Match maximal identifiers so an underscore inside a lowercase atom
+// (`sister_of`) is matched whole; `label` leaves non-variable tokens alone.
+const VAR_TOKEN = /[A-Za-z_][A-Za-z0-9_]*/g;
+
 /**
  * Build the rendering context for a trace. The relabel function is the identity
  * (no-op, byte-identical output) in `source` mode or in `auto` mode when no
- * name is overloaded. The label map is still built whenever a query is present
- * so the coreference callout can scope names in any mode.
+ * name is overloaded. When colour is active (--coref:2) relabel additionally
+ * HTML-escapes and wraps each variable in a `<span>` for its coreference class.
+ * The label map is still built whenever a query is present so the coreference
+ * callout can scope names in any mode.
  */
 function buildFormatCtx(steps: TimelineStep[], options: TimelineFormatterOptions): FormatCtx {
   const mode = options.labelMode;
@@ -54,11 +74,30 @@ function buildFormatCtx(steps: TimelineStep[], options: TimelineFormatterOptions
   if (!mode || !query) return { ...INERT_CTX, corefLevel, query };
 
   const map = buildLabelMap(steps, query, mode);
+
+  // Colour layer: escape + span-wrap each variable by its coreference class.
+  if (corefLevel >= 2) {
+    const coloring: Coloring = buildColoring(steps, query);
+    const relabel: Relabel = (text, scope) => {
+      let out = '';
+      let last = 0;
+      for (const m of text.matchAll(VAR_TOKEN)) {
+        out += escapeHtml(text.slice(last, m.index));
+        const tok = m[0];
+        const label = escapeHtml(map.label(tok, scope));
+        const cid = coloring.classId(tok, scope);
+        out += cid !== null ? `<span class="ptv-c${cid}">${label}</span>` : label;
+        last = m.index + tok.length;
+      }
+      out += escapeHtml(text.slice(last));
+      return out;
+    };
+    return { relabel, labelMap: map, corefLevel, query };
+  }
+
   const active = mode !== 'source' && (mode === 'full' || map.overloaded.size > 0);
-  // Match maximal identifiers so an underscore inside a lowercase atom
-  // (`sister_of`) is matched whole; `label` leaves non-variable tokens alone.
   const relabel: Relabel = active
-    ? (text, scope) => text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (tok) => map.label(tok, scope))
+    ? (text, scope) => text.replace(VAR_TOKEN, (tok) => map.label(tok, scope))
     : IDENTITY_RELABEL;
   return { relabel, labelMap: map, corefLevel, query };
 }

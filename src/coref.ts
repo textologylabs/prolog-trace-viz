@@ -250,3 +250,140 @@ export function queryHeadLinks(query: string, step: TimelineStep, labelMap: Labe
   }
   return links;
 }
+
+// ---------------------------------------------------------------------------
+// Coreference colouring (--coref:2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Categorical palette (skill-validated for both light and dark surfaces; first
+ * six hues, worst-pair CVD ΔE ≥ 9). Colour is always secondary here — every
+ * coloured token also shows its name — so the low-contrast light slots are
+ * covered by the relief rule.
+ */
+const PALETTE_LIGHT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
+const PALETTE_DARK = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300'];
+
+/** A coreference-class colouring over the trace's logical variables. */
+export interface Coloring {
+  /** Colour-class index (0-based) for a variable, or null if uncoloured. */
+  classId(name: string, scope: 'query' | number): number | null;
+  /** The `<style>` block defining the used colour classes, theme-aware. */
+  css(): string;
+  /** True if some coreference classes were left uncoloured (palette exhausted). */
+  capped: boolean;
+}
+
+const varKey = (name: string, scope: 'query' | number) => `${name}@@${scope}`;
+const appearanceRank = (scope: 'query' | number) => (scope === 'query' ? 0 : scope);
+
+/**
+ * Build the coreference-class colouring: union variables that Prolog identifies
+ * through unification (query↔head at the root, caller-subgoal↔callee-head down
+ * the call tree), then give each *interesting* class a palette colour so every
+ * occurrence of a co-referring variable shares a hue. A class is interesting if
+ * it spans more than one variable (cross-scope coreference) or its variable is
+ * shared across a clause's goals. Classes are coloured in first-appearance
+ * order; once the palette is exhausted the rest stay uncoloured (never cycled).
+ */
+export function buildColoring(steps: TimelineStep[], query: string): Coloring {
+  const nodes = collectLogicalVars(steps, query);
+
+  // Union-find over variable keys.
+  const parent = new Map<string, string>();
+  const ensure = (k: string) => { if (!parent.has(k)) parent.set(k, k); };
+  const find = (k: string): string => {
+    ensure(k);
+    let root = k;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    while (parent.get(k) !== root) { const next = parent.get(k)!; parent.set(k, root); k = next; }
+    return root;
+  };
+  const union = (a: string, b: string) => { parent.set(find(a), find(b)); };
+
+  for (const n of nodes) ensure(varKey(n.name, n.scope));
+
+  // Edge: query variable ≡ head variable (positional) at each root step.
+  for (const root of steps) {
+    if (!root.clause) continue;
+    const head = parseTerm(root.clause.head);
+    if (!head) continue;
+    const conj = splitConjuncts(query).map(c => parseTerm(c))
+      .find(t => t !== null && t.functor === head.functor && t.args.length === head.args.length);
+    if (!conj) continue;
+    for (let i = 0; i < head.args.length; i++) {
+      if (isVariable(conj.args[i]) && isVariable(head.args[i])) {
+        union(varKey(conj.args[i], 'query'), varKey(head.args[i], root.stepNumber));
+      }
+    }
+  }
+
+  // Edge: caller subgoal argument ≡ callee head argument (positional), walking
+  // the call tree with each child's parent scope.
+  const walk = (step: TimelineStep) => {
+    for (const child of step.children) {
+      if (child.subgoalTemplate && child.clause) {
+        const caller = parseTerm(child.subgoalTemplate);
+        const callee = parseTerm(child.clause.head);
+        if (caller && callee && caller.args.length === callee.args.length) {
+          for (let i = 0; i < caller.args.length; i++) {
+            if (isVariable(caller.args[i]) && isVariable(callee.args[i])) {
+              union(varKey(caller.args[i], step.stepNumber), varKey(callee.args[i], child.stepNumber));
+            }
+          }
+        }
+      }
+      walk(child);
+    }
+  };
+  steps.forEach(walk);
+
+  // Variables shared across ≥2 goals within a clause (intra-clause coreference).
+  const shared = new Set<string>();
+  for (const step of flatten(steps)) {
+    if (!step.clause) continue;
+    const places = new Map<string, number>();
+    const bump = (name: string) => places.set(name, (places.get(name) ?? 0) + 1);
+    // head is one place; each subgoal another
+    for (const name of new Set(extractVarNames(step.clause.head))) bump(name);
+    for (const sg of step.subgoals) {
+      const tmpl = sg.goal.indexOf(' → ') >= 0 ? sg.goal.slice(0, sg.goal.indexOf(' → ')) : sg.goal;
+      for (const name of new Set(extractVarNames(tmpl))) bump(name);
+    }
+    for (const [name, count] of places) {
+      if (count >= 2) shared.add(varKey(name, step.stepNumber));
+    }
+  }
+
+  // Group into components; pick the interesting ones and order by first appearance.
+  const members = new Map<string, LogicalVar[]>();
+  for (const n of nodes) {
+    const r = find(varKey(n.name, n.scope));
+    (members.get(r) ?? members.set(r, []).get(r)!).push(n);
+  }
+  const interesting = [...members.values()].filter(ms =>
+    ms.length >= 2 || ms.some(m => shared.has(varKey(m.name, m.scope)))
+  );
+  interesting.sort((a, b) =>
+    Math.min(...a.map(m => appearanceRank(m.scope))) - Math.min(...b.map(m => appearanceRank(m.scope)))
+  );
+
+  const colourOf = new Map<string, number>();
+  interesting.forEach((ms, i) => {
+    if (i < PALETTE_LIGHT.length) {
+      for (const m of ms) colourOf.set(varKey(m.name, m.scope), i);
+    }
+  });
+  const capped = interesting.length > PALETTE_LIGHT.length;
+  const usedCount = Math.min(interesting.length, PALETTE_LIGHT.length);
+
+  return {
+    classId: (name, scope) => colourOf.get(varKey(name, scope)) ?? null,
+    capped,
+    css() {
+      const light = Array.from({ length: usedCount }, (_, i) => `.ptv-c${i}{color:${PALETTE_LIGHT[i]}}`).join('');
+      const dark = Array.from({ length: usedCount }, (_, i) => `.ptv-c${i}{color:${PALETTE_DARK[i]}}`).join('');
+      return `<style>\n${light}\n@media (prefers-color-scheme: dark){${dark}}\n</style>`;
+    },
+  };
+}

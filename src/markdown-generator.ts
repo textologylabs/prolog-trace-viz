@@ -8,7 +8,7 @@ import { formatTimeline, TimelineFormatterOptions } from './timeline-formatter.j
 import { formatTimelineAsMermaid, TreeFormatterOptions } from './tree-formatter.js';
 
 import { DebugFlag } from './cli.js';
-import { LabelMode } from './coref.js';
+import { LabelMode, buildColoring } from './coref.js';
 
 export interface ClauseDefinition {
   line: number;
@@ -163,9 +163,26 @@ function generateTimelineSection(context: MarkdownContext): string {
   // <pre> is a CommonMark HTML block, so the blank lines between steps are
   // preserved. Escape HTML metacharacters since goals can contain < > &.
   const timelineText = formatTimeline(context.timeline, formatterOptions);
-  lines.push('<pre style="line-height: 1.15">');
-  lines.push(escapeHtml(timelineText));
-  lines.push('</pre>');
+  const colourActive = (context.corefLevel ?? 0) >= 2 && !!context.labelMode && !!context.query;
+
+  if (colourActive) {
+    // Colour layer (--coref:2): the formatter already emitted HTML-escaped text
+    // with variable <span>s, so do not re-escape. Emit the theme-aware <style>
+    // first (outside the <pre>).
+    const coloring = buildColoring(context.timeline, context.query);
+    lines.push(coloring.css());
+    lines.push('<pre style="line-height: 1.15">');
+    lines.push(timelineText);
+    lines.push('</pre>');
+    if (coloring.capped) {
+      lines.push('');
+      lines.push('_Some coreference classes are left uncoloured (palette exhausted); their names still disambiguate them._');
+    }
+  } else {
+    lines.push('<pre style="line-height: 1.15">');
+    lines.push(escapeHtml(timelineText));
+    lines.push('</pre>');
+  }
 
   return lines.join('\n');
 }
