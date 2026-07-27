@@ -244,8 +244,13 @@ function generateFinalAnswerSection(context: MarkdownContext): string {
     lines.push('```');
     lines.push(context.finalAnswer);
     lines.push('```');
+  } else if ((context.solutions?.length ?? 0) > 0) {
+    // A ground query that succeeded: no query variables, so there are no
+    // bindings to report. This is Prolog's plain "yes".
+    lines.push("**Yes** — the query is true. _(No variables in the query, so there are no bindings to report.)_");
   } else {
-    lines.push('Query succeeded with no bindings.');
+    // No solution was recorded: the query could not be proved. Prolog's "no".
+    lines.push('**No** — the query is not provable.');
   }
 
   // Add notes about truncation or first solution
@@ -254,8 +259,19 @@ function generateFinalAnswerSection(context: MarkdownContext): string {
     lines.push(`_Note: Trace truncated at depth ${context.maxDepth}_`);
   }
 
-  lines.push('');
-  lines.push(`_${context.singleSolutionLabel ?? 'Showing first solution only'}._`);
+  // Closing note. Three cases:
+  //  - split per-solution file: keep the explicit "Solution N of M" label.
+  //  - single successful solution (default): point the reader at how to see
+  //    the rest — there may be more solutions the trace didn't pursue.
+  //  - failure (no solution recorded): say nothing. "Showing first solution
+  //    only" is nonsense when there is no solution.
+  if (context.singleSolutionLabel) {
+    lines.push('');
+    lines.push(`_${context.singleSolutionLabel}._`);
+  } else if ((context.solutions?.length ?? 0) > 0) {
+    lines.push('');
+    lines.push('_Showing the first solution only — re-run with `-n <count>` or `--all` to see more._');
+  }
 
   return lines.join('\n');
 }

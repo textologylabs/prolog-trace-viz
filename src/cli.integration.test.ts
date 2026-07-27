@@ -243,7 +243,11 @@ describe('CLI Integration Tests', () => {
 
       const content = fs.readFileSync(tempOutput, 'utf-8');
       expect(content).not.toContain('## Solutions (');
-      expect(content).toContain('_Showing first solution only._');
+      // Single-solution default closes with the first-solution note plus a
+      // discoverability hint for enumerating the rest.
+      expect(content).toContain('Showing the first solution only');
+      expect(content).toContain('`-n <count>`');
+      expect(content).toContain('`--all`');
     });
 
     it('--split writes one file per solution', () => {

@@ -53,4 +53,4 @@ style C fill:#c8e6c9,stroke:#2e7d32,stroke-width:3px,color:#14361a
 X = a
 ```
 
-_Showing first solution only._
+_Showing the first solution only — re-run with `-n <count>` or `--all` to see more._

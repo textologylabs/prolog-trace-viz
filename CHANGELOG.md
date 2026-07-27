@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A failed query was reported as succeeding.** The Final Answer printed `Query succeeded with no bindings` whenever there were no variable bindings — but that also fired when the query *failed*, so an unprovable query was announced as a success. Success and failure are now distinguished from whether any solution was recorded.
+
+### Changed
+- **Clearer outcome messaging.** A ground query that succeeds now reads **`Yes` — the query is true** (with a note explaining there are no variables to bind), and an unprovable query reads **`No` — the query is not provable**, replacing the cryptic `succeeded with no bindings`.
+- **Discoverability hint on the single-solution footer.** The default single-solution note now points the reader at how to enumerate the rest — `re-run with -n <count> or --all to see more` — and is suppressed entirely on failure, where "showing first solution only" made no sense.
+
 ## [2.9.1] - 2026-07-26
 
 ### Fixed
