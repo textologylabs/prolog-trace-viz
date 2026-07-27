@@ -52,17 +52,30 @@ const ANON = '_';
 export function extractVarNames(text: string): string[] {
   const names: string[] = [];
   const seen = new Set<string>();
-  const re = /[A-Z_][A-Za-z0-9_]*/g;
+  // Match *maximal* identifiers so an underscore inside a lowercase atom
+  // (`sister_of`) is never mistaken for the variable `_of`.
+  const re = /[A-Za-z_][A-Za-z0-9_]*/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const tok = m[0];
-    if (tok === ANON) continue;         // anonymous — never co-refers
+    if (!isVarName(tok)) continue;
     if (!seen.has(tok)) {
       seen.add(tok);
       names.push(tok);
     }
   }
   return names;
+}
+
+/**
+ * True if a token is a Prolog *source* variable: uppercase- or
+ * underscore-initial, not the bare anonymous `_`, and not a tracer-internal
+ * variable like `_1150` (those belong to other rendering layers).
+ */
+function isVarName(tok: string): boolean {
+  if (tok === ANON) return false;
+  if (/^_\d+$/.test(tok)) return false;
+  return /^[A-Z_]/.test(tok);
 }
 
 /** Flatten a nested step tree into a pre-order list. */
@@ -124,6 +137,7 @@ export function computeLabels(vars: LogicalVar[], mode: LabelMode): LabelMap {
     byName.set(v.name, list);
   }
 
+  const known = new Set(byName.keys());
   const overloaded = new Set<string>();
   for (const [name, list] of byName) {
     if (list.length > 1) overloaded.add(name);
@@ -133,6 +147,9 @@ export function computeLabels(vars: LogicalVar[], mode: LabelMode): LabelMap {
     scope === 'query' ? name : `${name}@${scope}`;
 
   const label = (name: string, scope: 'query' | number): string => {
+    // Unknown token (an atom, a tracer-internal var, anything not collected as a
+    // source variable) is never a variable we should relabel — leave it alone.
+    if (!known.has(name)) return name;
     if (mode === 'source') return name;
     if (mode === 'full') return scope === 'query' ? name : `${name}@${scope}`;
     // auto

@@ -8,11 +8,42 @@
 
 import { TimelineStep } from './timeline.js';
 import { DebugFlag } from './cli.js';
+import { LabelMode, LabelMap, buildLabelMap } from './coref.js';
 
 export interface TimelineFormatterOptions {
   debugFlags?: Set<DebugFlag>;
   /** When > 1, insert a "Solution N" divider before each solution's first step. */
   solutionCount?: number;
+  /** Variable-labeling mode. Requires `query` to take effect. */
+  labelMode?: LabelMode;
+  /** The original query — needed to scope the query's own variables. */
+  query?: string;
+}
+
+/**
+ * A scope-aware relabeling function. `relabel(text, scope)` rewrites each
+ * variable token in `text` to its display label within `scope`. When labeling
+ * is inactive it is the identity function, guaranteeing byte-identical output.
+ */
+type Relabel = (text: string, scope: 'query' | number) => string;
+
+const IDENTITY_RELABEL: Relabel = (text) => text;
+
+/**
+ * Build the relabeling function for a trace. Returns the identity function
+ * (no-op) in `source` mode, or in `auto` mode when no name is overloaded — so
+ * the common case is untouched.
+ */
+function buildRelabel(steps: TimelineStep[], options: TimelineFormatterOptions): Relabel {
+  const mode = options.labelMode;
+  if (!mode || mode === 'source' || !options.query) return IDENTITY_RELABEL;
+  const map: LabelMap = buildLabelMap(steps, options.query, mode);
+  const active = mode === 'full' || map.overloaded.size > 0;
+  if (!active) return IDENTITY_RELABEL;
+  // Match maximal identifiers so an underscore inside a lowercase atom
+  // (`sister_of`) is matched whole; `label` leaves non-variable tokens alone.
+  return (text, scope) =>
+    text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (tok) => map.label(tok, scope));
 }
 
 /**
@@ -29,6 +60,7 @@ export function formatTimeline(steps: TimelineStep[], options: TimelineFormatter
   const lines: string[] = [];
   const showDividers = (options.solutionCount ?? 1) > 1;
   let shownSolution: number | undefined;
+  const relabel = buildRelabel(steps, options);
 
   for (const step of steps) {
     if (showDividers && step.solutionIndex !== undefined && step.solutionIndex !== shownSolution) {
@@ -37,7 +69,8 @@ export function formatTimeline(steps: TimelineStep[], options: TimelineFormatter
       lines.push('');
       shownSolution = step.solutionIndex;
     }
-    lines.push(...formatStepNested(step, 0, options));
+    // Root steps: the goal header shows the query's own variables.
+    lines.push(...formatStepNested(step, 0, options, relabel, 'query'));
     lines.push('');
   }
 
@@ -50,10 +83,21 @@ export function formatTimeline(steps: TimelineStep[], options: TimelineFormatter
  * @param depth Current nesting depth (0 = root level)
  * @param options Formatter options
  */
-function formatStepNested(step: TimelineStep, depth: number, options: TimelineFormatterOptions): string[] {
+function formatStepNested(
+  step: TimelineStep,
+  depth: number,
+  options: TimelineFormatterOptions,
+  relabel: Relabel = IDENTITY_RELABEL,
+  parentScope: 'query' | number = 'query',
+): string[] {
   const lines: string[] = [];
   const indent = '│  '.repeat(depth);
   const showInternalVars = hasDebugFlag(options, 'internal-vars');
+  // The goal header is written in the *caller's* variable names (query scope at
+  // the root, the enclosing clause's scope in a child). The clause line,
+  // unifications and subgoals are written in *this* step's clause scope.
+  const goalScope: 'query' | number = depth === 0 ? 'query' : parentScope;
+  const clauseScope: 'query' | number = step.stepNumber;
   
   // Step header with box drawing. A retry keeps its REDO label after the
   // following EXIT merges the next solution into it.
@@ -63,9 +107,11 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
   // subgoalLabel is like "[1.1]", strip brackets for cleaner display
   const subgoalMarker = step.subgoalLabel ? ` [Goal ${step.subgoalLabel.slice(1, -1)}]` : '';
   
-  // Format goal display - use clause variable name for output arg if available
-  const goalDisplay = formatGoalDisplay(step, showInternalVars);
-  
+  // Format goal display - use clause variable name for output arg if available.
+  // Relabel the goal body in the caller's scope, but keep the port label
+  // (REDO/CALL/FAIL) out of relabeling — those are uppercase tokens too.
+  const goalDisplay = relabel(formatGoalDisplay(step, showInternalVars), goalScope);
+
   // Build goal display from subgoal template when available (avoids using raw
   // tracer goal which may have different internal variable names from a different frame)
   let fullGoalDisplay = `${portLabel}${goalDisplay}`;
@@ -82,25 +128,25 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
     // debug uses additive V(_NNN) notation for consistency
     instantiated = replaceInternalVarsFromTemplate(step.subgoalTemplate, instantiated, showInternalVars);
     const displayWithArrow = step.subgoalTemplate === instantiated ? step.subgoalTemplate : `${step.subgoalTemplate} → ${instantiated}`;
-    fullGoalDisplay = `${portLabel}${displayWithArrow}`;
+    fullGoalDisplay = `${portLabel}${relabel(displayWithArrow, goalScope)}`;
   }
-  
+
   lines.push(`${indent}┌─ Step ${step.stepNumber}${subgoalMarker}: ${fullGoalDisplay}`);
-  
+
   // Show binding context if we have bindings from sibling steps
   if (step.subgoalBindings && step.subgoalBindings.length > 0) {
     for (const binding of step.subgoalBindings) {
-      lines.push(`${indent}│  where ${binding.variable} = ${binding.value} (from Step ${binding.fromStep})`);
+      lines.push(`${indent}│  where ${relabel(binding.variable, goalScope)} = ${relabel(binding.value, goalScope)} (from Step ${binding.fromStep})`);
     }
   }
-  
+
   // Explain why execution came back to this goal
   if (step.isRetry) {
     const retryOf = step.retryOfStep ? `Retry of Step ${step.retryOfStep}` : 'Retry';
     // A failure triggered it (backtrackFromStep set) → name the binding it undid.
     // Otherwise it's enumeration asking the goal for its next solution.
     const reason = step.backtrackFromStep !== undefined && step.retryRejected?.length
-      ? `${formatBindings(step.retryRejected)} led to failure; undone, seeking another solution`
+      ? `${relabel(formatBindings(step.retryRejected), goalScope)} led to failure; undone, seeking another solution`
       : 'seeking another solution';
     lines.push(`${indent}│  ${retryOf} — ${reason}`);
   }
@@ -109,7 +155,7 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
   switch (step.port) {
     case 'call':
     case 'merged':
-      lines.push(...formatMergedContent(step, indent, showInternalVars));
+      lines.push(...formatMergedContent(step, indent, showInternalVars, relabel, clauseScope));
       break;
     case 'redo':
       if (!step.isRetry) {
@@ -120,19 +166,20 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
       lines.push(`${indent}│  Failure`);
       break;
   }
-  
-  // Render children (nested inside this step)
+
+  // Render children (nested inside this step). A child's goal header is written
+  // in this step's clause scope, so pass stepNumber as the child's parentScope.
   if (step.children.length > 0) {
     lines.push(`${indent}│  `);
     for (const child of step.children) {
-      lines.push(...formatStepNested(child, depth + 1, options));
+      lines.push(...formatStepNested(child, depth + 1, options, relabel, step.stepNumber));
     }
   }
-  
+
   // Show result AFTER children (this is the key insight!)
   if (step.port === 'merged') {
     // Get the output variable name from clause if available, otherwise extract from goal
-    const resultDisplay = formatResultDisplay(step, showInternalVars);
+    const resultDisplay = relabel(formatResultDisplay(step, showInternalVars), goalScope);
     if (resultDisplay) {
       lines.push(`${indent}│  => ${resultDisplay}`);
     }
@@ -141,7 +188,7 @@ function formatStepNested(step: TimelineStep, depth: number, options: TimelineFo
     // where we could not work out precisely what the goal bound - otherwise the
     // "=>" line above already says it, in the query's own variable names.
     if (depth === 0 && step.queryVarState && step.result && !step.resultBindings) {
-      lines.push(`${indent}│  Query Variable: ${step.queryVarState}`);
+      lines.push(`${indent}│  Query Variable: ${relabel(step.queryVarState, 'query')}`);
     }
   }
   
@@ -313,38 +360,44 @@ function splitArgs(argsStr: string): string[] {
 /**
  * Format merged CALL/EXIT step content (before children)
  */
-function formatMergedContent(step: TimelineStep, indent: string, showInternal: boolean): string[] {
+function formatMergedContent(
+  step: TimelineStep,
+  indent: string,
+  showInternal: boolean,
+  relabel: Relabel = IDENTITY_RELABEL,
+  scope: 'query' | number = step.stepNumber,
+): string[] {
   const lines: string[] = [];
-  
+
   if (step.clause) {
     const clauseLabel = step.clause.body && step.clause.body !== 'true' ? 'Clause' : 'Fact';
-    lines.push(`${indent}│  ${clauseLabel}: ${step.clause.head} [line ${step.clause.line}]`);
-    
+    lines.push(`${indent}│  ${clauseLabel}: ${relabel(step.clause.head, scope)} [line ${step.clause.line}]`);
+
     // Show unifications if any - filter out internal variable bindings unless showInternal
     if (step.unifications.length > 0) {
-      const displayUnifications = showInternal 
-        ? step.unifications 
+      const displayUnifications = showInternal
+        ? step.unifications
         : step.unifications.filter(u => !isInternalVariable(u.value));
-      
+
       if (displayUnifications.length > 0) {
         lines.push(`${indent}│  Unifications:`);
         for (const unif of displayUnifications) {
-          lines.push(`${indent}│    ${unif.variable} = ${unif.value}`);
+          lines.push(`${indent}│    ${relabel(unif.variable, scope)} = ${relabel(unif.value, scope)}`);
         }
       }
     }
-    
+
     // Show spawned subgoals (these will be solved by children)
     // Clean up internal variables in subgoal display unless showInternal
     if (step.subgoals.length > 0) {
       lines.push(`${indent}│  Subgoals:`);
       for (const subgoal of step.subgoals) {
         const cleanedGoal = showInternal ? subgoal.goal : cleanInternalVarsFromSubgoal(subgoal.goal);
-        lines.push(`${indent}│    ${subgoal.label} ${cleanedGoal}`);
+        lines.push(`${indent}│    ${subgoal.label} ${relabel(cleanedGoal, scope)}`);
       }
     }
   }
-  
+
   return lines;
 }
 

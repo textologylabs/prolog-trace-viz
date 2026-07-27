@@ -8,6 +8,7 @@ import { formatTimeline, TimelineFormatterOptions } from './timeline-formatter.j
 import { formatTimelineAsMermaid, TreeFormatterOptions } from './tree-formatter.js';
 
 import { DebugFlag } from './cli.js';
+import { LabelMode } from './coref.js';
 
 export interface ClauseDefinition {
   line: number;
@@ -32,6 +33,10 @@ export interface MarkdownContext {
   truncated?: boolean;
   maxDepth?: number;
   formatterOptions?: FormatterOptions;
+  /** Variable-labeling mode (auto/source/full). */
+  labelMode?: LabelMode;
+  /** Coreference detail level (0 off … 3). */
+  corefLevel?: number;
 }
 
 /** True when the trace enumerated more than one solution. */
@@ -144,6 +149,8 @@ function generateTimelineSection(context: MarkdownContext): string {
   const formatterOptions: TimelineFormatterOptions = {
     debugFlags: context.formatterOptions?.debugFlags ?? new Set(),
     solutionCount: context.solutions?.length,
+    labelMode: context.labelMode,
+    query: context.query,
   };
 
   // Emit the box-drawing timeline as a raw <pre> with a tightened line-height
