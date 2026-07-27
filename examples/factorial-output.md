@@ -17,69 +17,69 @@ factorial(3, X)
 
 <pre style="line-height: 1.15">
 ┌─ Step 1: factorial(3, X)
-│  Clause: factorial(N, R) [line 5]
+│  Clause: factorial(N@1, R@1) [line 5]
 │  Unifications:
-│    N = 3
+│    N@1 = 3
 │  Subgoals:
-│    [1.1] N &gt; 0 → 3 &gt; 0
-│    [1.2] N1 is N - 1 → N1 is 3 - 1
-│    [1.3] factorial(N1, R1)
-│    [1.4] R is N * R1 → R is 3 * R1
+│    [1.1] N@1 &gt; 0 → 3 &gt; 0
+│    [1.2] N1@1 is N@1 - 1 → N1@1 is 3 - 1
+│    [1.3] factorial(N1@1, R1@1)
+│    [1.4] R@1 is N@1 * R1@1 → R@1 is 3 * R1@1
 │  
-│  ┌─ Step 2 [Goal 1.1]: N &gt; 0 → 3 &gt; 0
+│  ┌─ Step 2 [Goal 1.1]: N@1 &gt; 0 → 3 &gt; 0
 │  └─
-│  ┌─ Step 3 [Goal 1.2]: N1 is N - 1 → N1 is 3 - 1
-│  │  =&gt; N1 = 2
+│  ┌─ Step 3 [Goal 1.2]: N1@1 is N@1 - 1 → N1@1 is 3 - 1
+│  │  =&gt; N1@1 = 2
 │  └─
-│  ┌─ Step 4 [Goal 1.3]: factorial(2, R1)
-│  │  Clause: factorial(N, R) [line 5]
+│  ┌─ Step 4 [Goal 1.3]: factorial(2, R1@1)
+│  │  Clause: factorial(N@4, R@4) [line 5]
 │  │  Unifications:
-│  │    N = 2
+│  │    N@4 = 2
 │  │  Subgoals:
-│  │    [4.1] N &gt; 0 → 2 &gt; 0
-│  │    [4.2] N1 is N - 1 → N1 is 2 - 1
-│  │    [4.3] factorial(N1, R1)
-│  │    [4.4] R is N * R1 → R is 2 * R1
+│  │    [4.1] N@4 &gt; 0 → 2 &gt; 0
+│  │    [4.2] N1@4 is N@4 - 1 → N1@4 is 2 - 1
+│  │    [4.3] factorial(N1@4, R1@4)
+│  │    [4.4] R@4 is N@4 * R1@4 → R@4 is 2 * R1@4
 │  │  
-│  │  ┌─ Step 5 [Goal 4.1]: N &gt; 0 → 2 &gt; 0
+│  │  ┌─ Step 5 [Goal 4.1]: N@4 &gt; 0 → 2 &gt; 0
 │  │  └─
-│  │  ┌─ Step 6 [Goal 4.2]: N1 is N - 1 → N1 is 2 - 1
-│  │  │  =&gt; N1 = 1
+│  │  ┌─ Step 6 [Goal 4.2]: N1@4 is N@4 - 1 → N1@4 is 2 - 1
+│  │  │  =&gt; N1@4 = 1
 │  │  └─
-│  │  ┌─ Step 7 [Goal 4.3]: factorial(1, R1)
-│  │  │  Clause: factorial(N, R) [line 5]
+│  │  ┌─ Step 7 [Goal 4.3]: factorial(1, R1@4)
+│  │  │  Clause: factorial(N@7, R@7) [line 5]
 │  │  │  Unifications:
-│  │  │    N = 1
+│  │  │    N@7 = 1
 │  │  │  Subgoals:
-│  │  │    [7.1] N &gt; 0 → 1 &gt; 0
-│  │  │    [7.2] N1 is N - 1 → N1 is 1 - 1
-│  │  │    [7.3] factorial(N1, R1)
-│  │  │    [7.4] R is N * R1 → R is 1 * R1
+│  │  │    [7.1] N@7 &gt; 0 → 1 &gt; 0
+│  │  │    [7.2] N1@7 is N@7 - 1 → N1@7 is 1 - 1
+│  │  │    [7.3] factorial(N1@7, R1@7)
+│  │  │    [7.4] R@7 is N@7 * R1@7 → R@7 is 1 * R1@7
 │  │  │  
-│  │  │  ┌─ Step 8 [Goal 7.1]: N &gt; 0 → 1 &gt; 0
+│  │  │  ┌─ Step 8 [Goal 7.1]: N@7 &gt; 0 → 1 &gt; 0
 │  │  │  └─
-│  │  │  ┌─ Step 9 [Goal 7.2]: N1 is N - 1 → N1 is 1 - 1
-│  │  │  │  =&gt; N1 = 0
+│  │  │  ┌─ Step 9 [Goal 7.2]: N1@7 is N@7 - 1 → N1@7 is 1 - 1
+│  │  │  │  =&gt; N1@7 = 0
 │  │  │  └─
-│  │  │  ┌─ Step 10 [Goal 7.3]: factorial(0, R1)
+│  │  │  ┌─ Step 10 [Goal 7.3]: factorial(0, R1@7)
 │  │  │  │  Fact: factorial(0, 1) [line 4]
-│  │  │  │  =&gt; R1 = 1
+│  │  │  │  =&gt; R1@7 = 1
 │  │  │  └─
-│  │  │  ┌─ Step 11 [Goal 7.4]: R is N * R1 → R is 1 * 1
-│  │  │  │  where R1 = 1 (from Step 10)
-│  │  │  │  =&gt; R = 1
+│  │  │  ┌─ Step 11 [Goal 7.4]: R@7 is N@7 * R1@7 → R@7 is 1 * 1
+│  │  │  │  where R1@7 = 1 (from Step 10)
+│  │  │  │  =&gt; R@7 = 1
 │  │  │  └─
-│  │  │  =&gt; R1 = 1
+│  │  │  =&gt; R1@4 = 1
 │  │  └─
-│  │  ┌─ Step 12 [Goal 4.4]: R is N * R1 → R is 2 * 1
-│  │  │  where R1 = 1 (from Step 7)
-│  │  │  =&gt; R = 2
+│  │  ┌─ Step 12 [Goal 4.4]: R@4 is N@4 * R1@4 → R@4 is 2 * 1
+│  │  │  where R1@4 = 1 (from Step 7)
+│  │  │  =&gt; R@4 = 2
 │  │  └─
-│  │  =&gt; R1 = 2
+│  │  =&gt; R1@1 = 2
 │  └─
-│  ┌─ Step 13 [Goal 1.4]: R is N * R1 → R is 3 * 2
-│  │  where R1 = 2 (from Step 4)
-│  │  =&gt; R = 6
+│  ┌─ Step 13 [Goal 1.4]: R@1 is N@1 * R1@1 → R@1 is 3 * 2
+│  │  where R1@1 = 2 (from Step 4)
+│  │  =&gt; R@1 = 6
 │  └─
 │  =&gt; X = 6
 └─
@@ -95,18 +95,18 @@ graph TD
 %% Nodes
 A["?- factorial(3, X)"]
 B["① factorial(3, X)<br/>X = 6 · clause 5"]
-C["② N &gt; 0"]
-D["③ N1 is N - 1"]
-E["④ factorial(N1, R1)<br/>R1 = 2 · clause 5"]
-F["⑤ N &gt; 0"]
-G["⑥ N1 is N - 1"]
-H["⑦ factorial(N1, R1)<br/>R1 = 1 · clause 5"]
-I["⑧ N &gt; 0"]
-J["⑨ N1 is N - 1"]
-K["⑩ factorial(N1, R1)<br/>R1 = 1 · fact 4"]
-L["⑪ R is N * 1"]
-M["⑫ R is N * 1"]
-N["⑬ R is N * 2"]
+C["② N@1 &gt; 0"]
+D["③ N1@1 is N@1 - 1"]
+E["④ factorial(N1@1, R1@1)<br/>R1@1 = 2 · clause 5"]
+F["⑤ N@4 &gt; 0"]
+G["⑥ N1@4 is N@4 - 1"]
+H["⑦ factorial(N1@4, R1@4)<br/>R1@4 = 1 · clause 5"]
+I["⑧ N@7 &gt; 0"]
+J["⑨ N1@7 is N@7 - 1"]
+K["⑩ factorial(N1@7, R1@7)<br/>R1@7 = 1 · fact 4"]
+L["⑪ R@7 is N@7 * 1"]
+M["⑫ R@4 is N@4 * 1"]
+N["⑬ R@1 is N@1 * 2"]
 O["✓ X = 6"]
 
 %% Flow

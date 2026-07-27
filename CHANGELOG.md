@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-07-27
+
+### Added
+- **Coreference visualization.** Makes explicit *which variables are the same variable* — the hardest thing for Prolog beginners. Standardize-apart labeling is **on by default**: when one surface name denotes more than one logical variable — the query's `X` versus a clause's `X` (a "false friend"), or `N` recurring across recursive clause instances — the clause instances are disambiguated as `X@1`, `N@2`, etc., while names that are unambiguous stay exactly as written. `--labels:<mode>` overrides this: `auto` (default), `source` (never disambiguate), `full` (tag every clause instance, demonstrating that Prolog renames clause variables apart on each call). Labels apply to the timeline and the `--tree` call graph.
+- **`--coref:<n>` — layered coreference detail** (off by default):
+  - `--coref:1` adds a **Coreferences** callout per clause: the query↔head channel (`X ≡ Y`) and the variables shared across a clause's goals (`M — shared by [1.2], [1.3]`).
+  - `--coref:2` **colours** each coreference class, so a variable and everything it unifies with (the query's `X` and the clause's `Y`) glow the same hue across the whole trace. Skill-validated, colourblind-safe palette; theme-aware; degrades to plain labelled text where inline styles are stripped (e.g. GitHub).
+  - `--coref:3` adds a **Variable Bindings** panel: the substitution trail, one row per coreference class with the value it resolved to.
+
 ### Fixed
 - **A failed query was reported as succeeding.** The Final Answer printed `Query succeeded with no bindings` whenever there were no variable bindings — but that also fired when the query *failed*, so an unprovable query was announced as a success. Success and failure are now distinguished from whether any solution was recorded.
 

@@ -55,6 +55,8 @@ prolog-trace-viz <prolog-file> <query> [options]
 | `--all` | Trace all solutions (capped at 10) |
 | `--split` | Also write one file per solution: `<source>-soln1.md`, `-soln2.md`, … |
 | `--tree` | Include the call tree diagram (Mermaid) |
+| `--labels:<mode>` | Variable labeling: `auto` (default, disambiguate only ambiguous names as `X@1`), `source` (never), `full` (tag every clause instance) |
+| `--coref[:<n>]` | Coreference detail: `0` off (default), `1` callout, `2` +colour, `3` +binding panel (bare `--coref` = 1) |
 | `--debug` | Enable all debug features |
 | `--debug:<flag>` | Enable specific debug flag (e.g., `--debug:internal-vars`) |
 | `--verbose` | Display detailed processing information |

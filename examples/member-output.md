@@ -17,9 +17,9 @@ member(X, [a,b,c])
 
 <pre style="line-height: 1.15">
 ┌─ Step 1: member(X, [a,b,c])
-│  Fact: member(X, [X|_]) [line 4]
+│  Fact: member(X@1, [X@1|_]) [line 4]
 │  Unifications:
-│    X = a
+│    X@1 = a
 │    _ = [b,c]
 │  =&gt; X = a
 └─
