@@ -704,6 +704,29 @@ export class TimelineBuilder {
   private assignResultBindings(step: TimelineStep): void {
     if (!step.exitGoal) return;
 
+    // `X is Expr` is an infix builtin, not a functor(args) term, so the compound
+    // walk below can't decompose it. Handle it directly: the left-hand side is
+    // the result variable — unbound at CALL, its computed value at EXIT. Naming
+    // comes from the caller's template LHS (e.g. `F`), falling back to the raw
+    // name unless it is an internal variable. Without this, arithmetic goals
+    // carry no result and show only their expression in the call tree.
+    const calledIs = this.splitTopLevelIs(step.goal);
+    const exitedIs = this.splitTopLevelIs(step.exitGoal);
+    if (calledIs && exitedIs) {
+      const before = calledIs.lhs;
+      const after = exitedIs.lhs;
+      if (isVariable(before) && before !== after) {
+        const templateIs = step.subgoalTemplate ? this.splitTopLevelIs(step.subgoalTemplate) : null;
+        const name = templateIs && isVariable(templateIs.lhs) && !templateIs.lhs.startsWith('_')
+          ? templateIs.lhs
+          : (!before.startsWith('_') ? before : undefined);
+        step.resultBindings = name ? [{ variable: name, value: after }] : [];
+      } else {
+        step.resultBindings = [];
+      }
+      return;
+    }
+
     const called = parseTerm(step.goal);
     const exited = parseTerm(step.exitGoal);
     if (!called || !exited) return;
@@ -737,6 +760,24 @@ export class TimelineBuilder {
     }
 
     step.resultBindings = bindings;
+  }
+
+  /**
+   * Split a goal on its top-level ` is ` operator (depth 0, ignoring any ` is `
+   * nested inside parentheses or lists). Returns null if the goal is not an
+   * `X is Expr` term.
+   */
+  private splitTopLevelIs(goal: string): { lhs: string; rhs: string } | null {
+    let depth = 0;
+    for (let i = 0; i < goal.length - 3; i++) {
+      const ch = goal[i];
+      if (ch === '(' || ch === '[') depth++;
+      else if (ch === ')' || ch === ']') depth--;
+      else if (depth === 0 && goal.startsWith(' is ', i)) {
+        return { lhs: goal.slice(0, i).trim(), rhs: goal.slice(i + 4).trim() };
+      }
+    }
+    return null;
   }
 
   /**

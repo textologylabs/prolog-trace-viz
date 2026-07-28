@@ -310,6 +310,28 @@ describe('formatTimelineAsMermaid - rule nodes show clause, fact nodes show bind
   });
 });
 
+describe('formatTimelineAsMermaid - arithmetic (is/2) results', () => {
+  // p(N, R) :- R is N + 1.   ?- p(2, R).
+  const events: TraceEvent[] = [
+    { port: 'call', level: 1, goal: 'p(2,_1)', predicate: 'p/2' },
+    { port: 'call', level: 2, goal: '_2 is 2+1', predicate: 'is/2' },
+    { port: 'exit', level: 2, goal: '3 is 2+1', predicate: 'is/2' },
+    { port: 'exit', level: 1, goal: 'p(2,3)', predicate: 'p/2', clause: { head: 'p(N, R)', body: 'R is N + 1', line: 1 } },
+  ];
+  const query = 'p(2, R)';
+
+  it('shows the value an is/2 goal computed on its own node, named from the template', () => {
+    const b = new TimelineBuilder(events, undefined, query);
+    const out = formatTimelineAsMermaid(b.build(), query, 'R = 3', {}, b.getSolutions());
+    // The is/2 node carries the computed result, not just the expression.
+    const isNode = out.split('\n').find(l => /\bis\b/.test(l) && !l.includes('%%'))!;
+    expect(isNode).toContain('R = 3');
+    // The enclosing rule still shows only its clause (it did not produce the value).
+    const ruleNode = out.split('\n').find(l => l.includes('p(2, R)') && l.includes('clause 1'))!;
+    expect(ruleNode).not.toContain('R = 3');
+  });
+});
+
 describe('formatTimelineAsMermaid - recursion', () => {
   const events: TraceEvent[] = [
     {
