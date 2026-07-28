@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.6] - 2026-07-28
+
+### Fixed
+- **Arithmetic (`is/2`) goals showed no computed value in the call tree.** A goal like `F is N * F1` is an infix builtin, not a `functor(args)` term, so the result extractor couldn't decompose it and left the step with no binding — the call tree showed the expression but not the value it produced (only the final answer surfaced, on the `✓` leaf). Coming right after 2.10.5 (rule nodes no longer show a bubbled-up result), this left arithmetic recursion with its intermediate values invisible. The extractor now handles `X is Expr` directly: the left-hand side is the result variable, named from the caller's template (e.g. `F`), bound to its value at `EXIT`. So `factorial(3, F)` now shows `N1 = 2`, `F = 2`, `F = 6` on the arithmetic nodes. The timeline already displayed these (via its own path) and is unchanged; the tree and the `--coref:3` binding panel now draw from the same result data. Comparison builtins (`N > 0`) correctly still show nothing — they bind nothing.
+
 ## [2.10.5] - 2026-07-27
 
 ### Fixed
