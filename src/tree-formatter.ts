@@ -255,11 +255,19 @@ function labelForStep(step: TimelineStep, relabel: TreeRelabel = TREE_IDENTITY, 
 
   const parts: string[] = [`${toCircledNumber(step.stepNumber)} ${escapeLabel(displayGoal(step, relabel, scope))}`];
 
+  // A rule (a clause with a body) does not itself bind its result — its subgoals
+  // do, and the value bubbles up (the timeline shows it as the step's closing
+  // "=> X"). Pinning that value next to "clause N" here reads as if the clause
+  // produced it, so a rule node shows only the clause it applied. The binding
+  // appears where it is genuinely made — on the fact/builtin node below, and on
+  // the ✓ solution leaf. A fact (bodyless clause) really does make its binding,
+  // so it keeps it.
+  const isRule = !!(step.clause && step.clause.body && step.clause.body !== 'true');
   const clauseRef = step.clause
-    ? `${step.clause.body && step.clause.body !== 'true' ? 'clause' : 'fact'} ${step.clause.line}`
+    ? `${isRule ? 'clause' : 'fact'} ${step.clause.line}`
     : '';
 
-  if (step.resultBindings && step.resultBindings.length > 0) {
+  if (!isRule && step.resultBindings && step.resultBindings.length > 0) {
     const bound = step.resultBindings.map(b => `${relabel(b.variable, scope)} = ${escapeLabel(b.value)}`).join(', ');
     parts.push(clauseRef ? `${bound} · ${clauseRef}` : bound);
   } else if (clauseRef) {

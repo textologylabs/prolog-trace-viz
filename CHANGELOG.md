@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.10.4] - 2026-07-27
+## [2.10.5] - 2026-07-27
+
+### Fixed
+- **The call tree attributed a result to the rule that didn't produce it.** A rule node showed its bubbled-up result next to the clause it applied — e.g. `① grandparent(tom, GC)` / `GC = ann · clause 9` — which reads as *"clause 9 produced GC = ann."* It didn't: applying clause 9 only unifies `G = tom` and spawns the subgoals; `ann` is produced by `parent(bob, ann)` further down and bubbles up. This also meant a node shared by several solutions was pinned to just the first one's value (`GC = ann`, even on the path to `GC = pat`). Now a **rule node** (a clause with a body) shows only the clause it applied; the binding appears where it is genuinely made — on the **fact node** that made it and on the `✓` solution leaf. Fact nodes are unchanged (they keep their binding). This makes the call tree and the execution timeline agree on where each value comes from. (Note: builtin nodes such as `is/2` still do not display their computed value in the tree — a separate, pre-existing gap that only affects arithmetic traces.)
 
 ### Fixed
 - **Step numbering skipped a number on backtracking.** An ancestor re-entry (a clause re-`EXIT`ing the same instance on backtracking) was consuming a step number even though the call tree never draws it — so `grandparent(tom, GC) -n 2` numbered the re-solved goal ⑤ with no ④ anywhere, a jump that read as a bug. An ancestor re-entry is not a genuine execution step, so it now reuses the number (and scope) of the instance it re-satisfies and consumes none of its own. Genuine steps stay consecutive (`①②③④`), and the re-entry shows no `Step N:` header in the timeline — the *"Succeeds again (Step N re-satisfied)"* line already names what re-solved. Real recursion is unaffected: its genuinely distinct instances keep consecutive numbers and their `@N` scope tags.

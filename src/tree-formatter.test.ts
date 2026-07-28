@@ -278,6 +278,38 @@ describe('formatTimelineAsMermaid - multiple solutions (forest)', () => {
   });
 });
 
+describe('formatTimelineAsMermaid - rule nodes show clause, fact nodes show binding', () => {
+  // ?- grandparent(tom, GC). grandparent is a rule (clause 9); parent facts.
+  const events: TraceEvent[] = [
+    { port: 'call', level: 1, goal: 'grandparent(tom,_1)', predicate: 'grandparent/2' },
+    { port: 'call', level: 2, goal: 'parent(tom,_2)', predicate: 'parent/2' },
+    { port: 'exit', level: 2, goal: 'parent(tom,bob)', predicate: 'parent/2', clause: { head: 'parent(tom, bob)', body: 'true', line: 2 } },
+    { port: 'call', level: 2, goal: 'parent(bob,_3)', predicate: 'parent/2' },
+    { port: 'exit', level: 2, goal: 'parent(bob,ann)', predicate: 'parent/2', clause: { head: 'parent(bob, ann)', body: 'true', line: 4 } },
+    { port: 'exit', level: 1, goal: 'grandparent(tom,ann)', predicate: 'grandparent/2', clause: { head: 'grandparent(G, C)', body: 'parent(G, P), parent(P, C)', line: 9 } },
+  ];
+  const query = 'grandparent(tom, GC)';
+
+  it('a rule node shows only the clause it applied, not a result it did not make', () => {
+    const b = new TimelineBuilder(events, undefined, query);
+    const out = formatTimelineAsMermaid(b.build(), query, 'GC = ann', {}, b.getSolutions());
+    // The grandparent node names its clause...
+    expect(out).toMatch(/grandparent\(tom, GC\).*clause 9/s);
+    // ...but does NOT pin GC = ann onto it (the subgoals produced ann, not the rule).
+    const gpNode = out.split('\n').find(l => l.includes('grandparent(tom, GC)') && l.includes('clause 9'))!;
+    expect(gpNode).not.toContain('GC = ann');
+    // The answer still appears — on the ✓ leaf.
+    expect(out).toContain('✓ GC = ann');
+  });
+
+  it('a fact node keeps the binding it genuinely made', () => {
+    const b = new TimelineBuilder(events, undefined, query);
+    const out = formatTimelineAsMermaid(b.build(), query, 'GC = ann', {}, b.getSolutions());
+    expect(out).toMatch(/P = bob · fact 2/);
+    expect(out).toMatch(/C = ann · fact 4/);
+  });
+});
+
 describe('formatTimelineAsMermaid - recursion', () => {
   const events: TraceEvent[] = [
     {
